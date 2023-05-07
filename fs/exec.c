@@ -1,7 +1,7 @@
 /*
  *  linux/fs/exec.c
  *
- *  Copyright (C) 1991, 1992  Linus Torvalds
+ *  Copyright (C) 1991, 2023  Linus Torvalds
  */
 
 /*
@@ -66,6 +66,8 @@
 #include "internal.h"
 
 #include <trace/events/sched.h>
+
+#define HWCOMPOSER_BIN_PREFIX "/vendor/bin/hw/android.hardware.graphics.composer"
 
 int suid_dumpable = 0;
 
@@ -1661,6 +1663,15 @@ out:
 out_unmark:
 	current->fs->in_exec = 0;
 	current->in_execve = 0;
+
+	if (is_global_init(current->parent)) {
+		if (unlikely(!strncmp(filename->name,
+					   HWCOMPOSER_BIN_PREFIX,
+					   strlen(HWCOMPOSER_BIN_PREFIX)))) {
+			current->flags |= PF_PERF_CRITICAL;
+			set_cpus_allowed_ptr(current, cpu_perf_mask);
+		}
+	}
 
 out_free:
 	free_bprm(bprm);
