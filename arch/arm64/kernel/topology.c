@@ -26,13 +26,6 @@
 #include <asm/cputype.h>
 #include <asm/topology.h>
 
-static DEFINE_PER_CPU(unsigned long, cpu_efficiency) = SCHED_CAPACITY_SCALE;
-
-unsigned long arch_get_cpu_efficiency(int cpu)
-{
-	return per_cpu(cpu_efficiency, cpu);
-}
-
 /*
  * cpu power table
  * This per cpu data structure describes the relative capacity of each core.
