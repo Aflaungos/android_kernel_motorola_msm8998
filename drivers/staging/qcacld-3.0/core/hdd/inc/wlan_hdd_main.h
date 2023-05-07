@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2023 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -2041,7 +2041,6 @@ struct hdd_context_s {
 	/** P2P Device MAC Address for the adapter  */
 	struct qdf_mac_addr p2pDeviceAddress;
 
-	qdf_wake_lock_t rx_wake_lock;
 	qdf_wake_lock_t sap_wake_lock;
 
 #ifdef FEATURE_WLAN_TDLS
