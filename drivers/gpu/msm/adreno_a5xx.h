@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2023, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -51,8 +51,6 @@
 	{ BIT(A5XX_INT_ISDB_UNDER_DEBUG), "ISDB_UNDER_DEBUG" }
 
 #define A5XX_CP_CTXRECORD_MAGIC_REF     0x27C4BAFCUL
-/* Size of each CP preemption record */
-#define A5XX_CP_CTXRECORD_SIZE_IN_BYTES     0x10000
 /* Size of the preemption counter block (in bytes) */
 #define A5XX_CP_CTXRECORD_PREEMPTION_COUNTER_SIZE   (16 * 4)
 

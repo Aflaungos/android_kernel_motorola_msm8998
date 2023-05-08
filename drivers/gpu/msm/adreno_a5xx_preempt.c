@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2023, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -497,8 +497,13 @@ static int a5xx_preemption_ringbuffer_init(struct adreno_device *adreno_dev,
 	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
 	int ret;
 
+	/*
+	 * Reserve CP context record size as
+	 * GMEM size + GPU HW state size i.e 0x110000
+	 */
 	ret = kgsl_allocate_global(device, &rb->preemption_desc,
-		A5XX_CP_CTXRECORD_SIZE_IN_BYTES, 0, KGSL_MEMDESC_PRIVILEGED,
+		adreno_dev->gpucore->gmem_size + 0x110000,
+		0, KGSL_MEMDESC_PRIVILEGED,
 		"preemption_desc");
 	if (ret)
 		return ret;
