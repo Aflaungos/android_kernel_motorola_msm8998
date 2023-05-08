@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2023, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -259,11 +259,6 @@ struct sde_hw_mdp *sde_hw_mdptop_init(enum sde_mdp idx,
 	mdp->idx = idx;
 	mdp->cap = cfg;
 	_setup_mdp_ops(&mdp->ops, mdp->cap->features);
-
-	sde_dbg_reg_register_dump_range(SDE_DBG_NAME, cfg->name,
-			mdp->hw.blk_off, mdp->hw.blk_off + mdp->hw.length,
-			mdp->hw.xin_id);
-	sde_dbg_set_sde_top_offset(mdp->hw.blk_off);
 
 	return mdp;
 }
