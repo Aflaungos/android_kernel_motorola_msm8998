@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Copyright (C) 2018-2019 Sultan Alsawaf <sultan@kerneltoast.com>.
+ * Copyright (C) 2018-2023 Sultan Alsawaf <sultan@kerneltoast.com>.
  */
 
 #define pr_fmt(fmt) "devfreq_boost: " fmt
@@ -381,6 +381,9 @@ static int __init devfreq_boost_init(void)
 
 	d->devices[DEVFREQ_MSM_CPUBW].boost_freq =
 		CONFIG_DEVFREQ_MSM_CPUBW_BOOST_FREQ;
+
+	d->devices[DEVFREQ_MSM_LLCCBW].boost_freq =
+		CONFIG_DEVFREQ_MSM_LLCCBW_BOOST_FREQ;
 
 	devfreq_boost_input_handler.private = d;
 	ret = input_register_handler(&devfreq_boost_input_handler);
