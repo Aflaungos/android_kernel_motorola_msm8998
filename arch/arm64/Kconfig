@@ -1303,6 +1303,8 @@ source "drivers/cpufreq/Kconfig"
 
 endmenu
 
+source kernel/Kconfig.hz
+
 source "net/Kconfig"
 
 source "drivers/Kconfig"
