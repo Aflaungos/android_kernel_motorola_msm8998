@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018, Sultan Alsawaf <sultanxda@gmail.com>
+ * Copyright (C) 2023, Sultan Alsawaf <sultanxda@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -15,8 +15,12 @@
 
 #ifdef CONFIG_CPU_INPUT_BOOST
 void cpu_input_boost_kick(void);
+void cpu_input_boost_kick_max(unsigned int duration_ms);
 #else
 static inline void cpu_input_boost_kick(void)
+{
+}
+static inline void cpu_input_boost_kick_max(unsigned int duration_ms)
 {
 }
 #endif
