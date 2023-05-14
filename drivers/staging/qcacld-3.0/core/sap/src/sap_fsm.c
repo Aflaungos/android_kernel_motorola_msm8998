@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -58,10 +58,6 @@
 /*----------------------------------------------------------------------------
  *  External declarations for global context
  * -------------------------------------------------------------------------*/
-#ifdef FEATURE_WLAN_CH_AVOID
-extern sapSafeChannelType safe_channels[];
-#endif /* FEATURE_WLAN_CH_AVOID */
-
 /*----------------------------------------------------------------------------
  * Static Variable Definitions
  * -------------------------------------------------------------------------*/
@@ -835,6 +831,7 @@ int sap_start_dfs_cac_timer(ptSapContext sapContext);
  *
  * Return: string for the @event.
  */
+#ifdef WLAN_DEBUG
 static uint8_t *sap_hdd_event_to_string(eSapHddEvent event)
 {
 	switch (event) {
@@ -874,6 +871,7 @@ static uint8_t *sap_hdd_event_to_string(eSapHddEvent event)
 		return "eSAP_HDD_EVENT_UNKNOWN";
 	}
 }
+#endif
 
 /*----------------------------------------------------------------------------
  * Externalized Function Definitions
@@ -2288,7 +2286,8 @@ QDF_STATUS sap_goto_channel_sel(ptSapContext sap_context,
 
 	if (cds_concurrent_beaconing_sessions_running()) {
 		con_ch =
-			sme_get_concurrent_operation_channel(h_hal);
+			sme_get_beaconing_concurrent_operation_channel(h_hal,
+							sap_context->sessionId);
 #ifdef FEATURE_WLAN_STA_AP_MODE_DFS_DISABLE
 		if (con_ch && sap_context->channel == AUTO_CHANNEL_SELECT) {
 			sap_context->dfs_ch_disable = true;
@@ -2300,9 +2299,9 @@ QDF_STATUS sap_goto_channel_sel(ptSapContext sap_context,
 		}
 #endif
 #ifdef FEATURE_WLAN_MCC_TO_SCC_SWITCH
-		if (sap_context->cc_switch_mode !=
+		if (con_ch && (sap_context->cc_switch_mode !=
 					QDF_MCC_TO_SCC_SWITCH_DISABLE &&
-					sap_context->channel) {
+					sap_context->channel)) {
 			/*
 			 * For ACS request ,the sapContext->channel is 0,
 			 * we skip below overlap checking. When the ACS
@@ -2323,6 +2322,9 @@ QDF_STATUS sap_goto_channel_sel(ptSapContext sap_context,
 					"%s: Override ch %d to %d due to CC Intf",
 					__func__, sap_context->channel, con_ch);
 				sap_context->channel = con_ch;
+				if (CDS_IS_CHANNEL_24GHZ(con_ch))
+					sap_context->ch_params.ch_width =
+								CH_WIDTH_20MHZ;
 				cds_set_channel_params(sap_context->channel, 0,
 						&sap_context->ch_params);
 			}
@@ -2384,6 +2386,9 @@ QDF_STATUS sap_goto_channel_sel(ptSapContext sap_context,
 						__func__, sap_context->channel,
 						con_ch);
 				sap_context->channel = con_ch;
+				if (CDS_IS_CHANNEL_24GHZ(con_ch))
+					sap_context->ch_params.ch_width =
+								CH_WIDTH_20MHZ;
 				cds_set_channel_params(sap_context->channel, 0,
 						&sap_context->ch_params);
 			}
@@ -3876,7 +3881,8 @@ static QDF_STATUS sap_fsm_state_ch_select(ptSapContext sap_ctx,
 		if (cds_concurrent_beaconing_sessions_running()) {
 			uint16_t con_ch;
 
-			con_ch = sme_get_concurrent_operation_channel(hal);
+			con_ch = sme_get_beaconing_concurrent_operation_channel(
+					hal, sap_ctx->sessionId);
 			if (con_ch && CDS_IS_DFS_CH(con_ch))
 				sap_ctx->channel = con_ch;
 		}
@@ -4367,7 +4373,9 @@ QDF_STATUS sap_fsm(ptSapContext sap_ctx, ptWLAN_SAPEvent sap_event)
 	 * state var that keeps track of state machine
 	 */
 	eSapFsmStates_t state_var = sap_ctx->sapsMachine;
+#ifdef WLAN_DEBUG
 	uint32_t msg = sap_event->event; /* State machine input event message */
+#endif
 	QDF_STATUS qdf_status = QDF_STATUS_E_FAILURE;
 	tHalHandle hal = CDS_GET_HAL_CB(sap_ctx->p_cds_gctx);
 	tpAniSirGlobal mac_ctx;
@@ -4836,12 +4844,11 @@ static QDF_STATUS sap_get_channel_list(ptSapContext sap_ctx,
 	uint8_t end_ch_num, band_end_ch;
 	uint32_t en_lte_coex;
 	tHalHandle hal = CDS_GET_HAL_CB(sap_ctx->p_cds_gctx);
-#ifdef FEATURE_WLAN_CH_AVOID
-	uint8_t i;
-#endif
 	tpAniSirGlobal mac_ctx;
 	tSapChSelSpectInfo spect_info_obj = { NULL, 0 };
 	uint16_t ch_width;
+	uint8_t i;
+	uint8_t ch;
 
 	if (NULL == hal) {
 		QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_ERROR,
@@ -4875,7 +4882,7 @@ static QDF_STATUS sap_get_channel_list(ptSapContext sap_ctx,
 
 	/* Check if LTE coex is enabled and 2.4GHz is selected */
 	if (en_lte_coex && (band_start_ch == CHAN_ENUM_1) &&
-	    (band_end_ch == CHAN_ENUM_13)) {
+	    (band_end_ch == CHAN_ENUM_14)) {
 		/* Set 2.4GHz upper limit to channel 9 for LTE COEX */
 		band_end_ch = CHAN_ENUM_9;
 	}
@@ -4909,6 +4916,10 @@ static QDF_STATUS sap_get_channel_list(ptSapContext sap_ctx,
 		    ((false == mac_ctx->scan.fEnableDFSChnlScan) &&
 		     (CHANNEL_STATE_ENABLE ==
 		      CDS_CHANNEL_STATE(loop_count)))))
+			continue;
+
+		if (CDS_CHANNEL_NUM(loop_count) == 12 ||
+		    CDS_CHANNEL_NUM(loop_count) == 13)
 			continue;
 
 		/*
@@ -4948,21 +4959,12 @@ static QDF_STATUS sap_get_channel_list(ptSapContext sap_ctx,
 			if (CDS_CHANNEL_NUM(loop_count) >=
 			    CDS_CHANNEL_NUM(CHAN_ENUM_1) &&
 			    CDS_CHANNEL_NUM(loop_count) <=
-			    CDS_CHANNEL_NUM(CHAN_ENUM_13))
+			    CDS_CHANNEL_NUM(CHAN_ENUM_14))
 				continue;
 		}
 
-#ifdef FEATURE_WLAN_CH_AVOID
-		for (i = 0; i < NUM_CHANNELS; i++) {
-			if (safe_channels[i].channelNumber ==
-			     CDS_CHANNEL_NUM(loop_count)) {
-				/* Check if channel is safe */
-				if (true == safe_channels[i].isSafe) {
-#endif
-#ifdef FEATURE_WLAN_AP_AP_ACS_OPTIMIZE
-		uint8_t ch;
-
 		ch = CDS_CHANNEL_NUM(loop_count);
+#ifdef FEATURE_WLAN_AP_AP_ACS_OPTIMIZE
 		if ((sap_ctx->acs_cfg->skip_scan_status ==
 			eSAP_DO_PAR_ACS_SCAN)) {
 		    if ((ch >= sap_ctx->acs_cfg->skip_scan_range1_stch &&
@@ -4992,14 +4994,8 @@ static QDF_STATUS sap_get_channel_list(ptSapContext sap_ctx,
 				ch_count, ch);
 		}
 #else
-		list[ch_count] = CDS_CHANNEL_NUM(loop_count);
+		list[ch_count] = ch;
 		ch_count++;
-#endif
-#ifdef FEATURE_WLAN_CH_AVOID
-				}
-				break;
-			}
-		}
 #endif
 	}
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2019 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -348,7 +348,6 @@ typedef struct {
  * struct tSetStaKeyParams - set key params
  * @staIdx: station id
  * @encType: encryption type
- * @wepType: WEP type
  * @defWEPIdx: Default WEP key, valid only for static WEP, must between 0 and 3
  * @key: valid only for non-static WEP encyrptions
  * @singleTidRc: 1=Single TID based Replay Count, 0=Per TID based RC
@@ -366,7 +365,6 @@ typedef struct {
 typedef struct {
 	uint16_t staIdx;
 	tAniEdType encType;
-	tAniWepType wepType;
 	uint8_t defWEPIdx;
 	tSirKeys key[SIR_MAC_MAX_NUM_OF_DEFAULT_KEYS];
 	uint8_t singleTidRc;
@@ -578,7 +576,8 @@ typedef enum eDelStaReasonCode {
 	HAL_DEL_STA_REASON_CODE_KEEP_ALIVE = 0x1,
 	HAL_DEL_STA_REASON_CODE_TIM_BASED = 0x2,
 	HAL_DEL_STA_REASON_CODE_RA_BASED = 0x3,
-	HAL_DEL_STA_REASON_CODE_UNKNOWN_A2 = 0x4
+	HAL_DEL_STA_REASON_CODE_UNKNOWN_A2 = 0x4,
+	HAL_DEL_STA_REASON_CODE_BTM_DISASSOC_IMMINENT = 0x5
 } tDelStaReasonCode;
 
 typedef enum eSmpsModeValue {
@@ -873,6 +872,9 @@ typedef struct {
  * @isDfsChannel: is DFS channel
  * @vhtCapable: VHT capable
  * @dot11_mode: 802.11 mode
+ * @reduced_beacon_interval: reduced beacon interval value
+ * @ssid_hidden: the sap ssid is hidden
+ * @ssid: sap ssid
  */
 typedef struct {
 	uint8_t channelNumber;
@@ -905,6 +907,8 @@ typedef struct {
 	uint8_t nss;
 	bool rx_ldpc;
 	uint16_t reduced_beacon_interval;
+	uint8_t ssid_hidden;
+	tSirMacSSid ssid;
 } tSwitchChannelParams, *tpSwitchChannelParams;
 
 typedef void (*tpSetLinkStateCallback)(tpAniSirGlobal pMac, void *msgParam,
@@ -1149,6 +1153,7 @@ typedef struct sMaxTxPowerPerBandParams {
  * @tx_aggr_sw_retry_threshold_bk: sw retry threshold for bk
  * @tx_aggr_sw_retry_threshold_vi: sw retry threshold for vi
  * @tx_aggr_sw_retry_threshold_vo: sw retry threshold for vo
+ * @disable_4way_hs_offload: enable/disable 4 way handshake offload to firmware
  */
 struct add_sta_self_params {
 	tSirMacAddr self_mac_addr;
@@ -1173,6 +1178,7 @@ struct add_sta_self_params {
 	uint32_t tx_aggr_sw_retry_threshold_bk;
 	uint32_t tx_aggr_sw_retry_threshold_vi;
 	uint32_t tx_aggr_sw_retry_threshold_vo;
+	bool disable_4way_hs_offload;
 };
 
 /**
@@ -1459,5 +1465,15 @@ typedef struct sNanRequest {
 	uint8_t request_data[];
 } tNanRequest, *tpNanRequest;
 #endif /* WLAN_FEATURE_NAN */
+
+/*
+ * struct roam_pmkid_req_event - Pmkid event with entries destination structure
+ * @num_entries: total entries sent over the event
+ * @ap_bssid: bssid list
+ */
+struct roam_pmkid_req_event {
+	uint32_t num_entries;
+	struct qdf_mac_addr ap_bssid[];
+};
 
 #endif /* _HALMSGAPI_H_ */

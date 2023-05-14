@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -377,6 +377,16 @@ sch_bcn_process_sta(tpAniSirGlobal mac_ctx,
 		       bcn->channelNumber);
 		return false;
 	}
+
+	/*
+	 * Ignore bcn as channel switch IE present and csa offload is enabled,
+	 * as in CSA offload enabled case FW will send Event to switch channel
+	 */
+	if (bcn->channelSwitchPresent && wma_is_csa_offload_enabled()) {
+		pe_debug("Ignore bcn as channel switch IE present and csa offload is enabled");
+		return false;
+	}
+
 	lim_detect_change_in_ap_capabilities(mac_ctx, bcn, session);
 	if (lim_get_sta_hash_bssidx(mac_ctx, DPH_STA_HASH_INDEX_PEER, bssIdx,
 				    session) != eSIR_SUCCESS)
@@ -540,21 +550,29 @@ sch_bcn_process_sta_ibss(tpAniSirGlobal mac_ctx,
 					(STA_INVALID_IDX == pStaDs->staIndex)))
 		return;
 
+	/*
+	 * Ignore opmode change during channel change The opmode will be updated
+	 * with the beacons on new channel once the AP move to new channel.
+	 */
+	if (session->ch_switch_in_progress) {
+		pe_debug("Ignore opmode change as channel switch is in progress");
+		return;
+	}
+
 	if (session->vhtCapability && bcn->OperatingMode.present) {
 		update_nss(mac_ctx, pStaDs, bcn, session, pMh);
 		operMode = get_operating_channel_width(pStaDs);
 		if ((operMode == eHT_CHANNEL_WIDTH_80MHZ) &&
 		    (bcn->OperatingMode.chanWidth > eHT_CHANNEL_WIDTH_80MHZ))
 			skip_opmode_update = true;
+
 		if (WNI_CFG_CHANNEL_BONDING_MODE_DISABLE == cb_mode) {
 			/*
-			 * if channel bonding is disabled from INI and
-			 * receiving beacon which has operating mode IE
-			 * containing channel width change then don't update
-			 * CH_WIDTH
+			 * if channel bonding is disabled from INI don't
+			 * update the CH_WIDTH
 			 */
-			pe_err("CB disabled & CH_WIDTH changed old[%d] new[%d]",
-				operMode, bcn->OperatingMode.chanWidth);
+			pe_debug_rate_limited(30, "CB disabled skip bw update: old[%d] new[%d]",
+				      operMode, bcn->OperatingMode.chanWidth);
 			return;
 		}
 
@@ -620,15 +638,14 @@ sch_bcn_process_sta_ibss(tpAniSirGlobal mac_ctx,
 
 	if (WNI_CFG_CHANNEL_BONDING_MODE_DISABLE == cb_mode) {
 		/*
-		 * if channel bonding is disabled from INI and
-		 * receiving beacon which has operating mode IE
-		 * containing channel width change then don't update
-		 * the CH_WIDTH
+		 * if channel bonding is disabled from INI don't
+		 * update the CH_WIDTH
 		 */
-		pe_err("CB disabled & VHT CH_WIDTH changed old[%d] new[%d]",
-			operMode, bcn->VHTOperation.chanWidth);
+		pe_debug_rate_limited(30, "CB disabled, skip ch width update: old[%d] new[%d]",
+				      operMode, bcn->VHTOperation.chanWidth);
 		return;
 	}
+
 	if (!skip_opmode_update &&
 	    (operMode != bcn->VHTOperation.chanWidth)) {
 		pe_debug("received VHTOP CHWidth %d staIdx = %d",
@@ -978,7 +995,8 @@ sch_beacon_edca_process(tpAniSirGlobal pMac, tSirMacEdcaParamSetIE *edca,
 	session->gLimEdcaParams[EDCA_AC_VI] = edca->acvi;
 	session->gLimEdcaParams[EDCA_AC_VO] = edca->acvo;
 
-	if (pMac->roam.configParam.enable_edca_params) {
+	if (pMac->roam.configParam.enable_edca_params &&
+	    !pMac->follow_ap_edca) {
 		session->gLimEdcaParams[EDCA_AC_VO].aci.aifsn =
 			pMac->roam.configParam.edca_vo_aifs;
 		session->gLimEdcaParams[EDCA_AC_VI].aci.aifsn =

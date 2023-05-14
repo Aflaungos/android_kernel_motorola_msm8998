@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -55,6 +55,7 @@
 #include <cds_utils.h>
 #include "pld_common.h"
 #include "wlan_hdd_regulatory.h"
+#include "wlan_hdd_power.h"
 
 #include "wma.h"
 #ifdef WLAN_DEBUG
@@ -87,6 +88,11 @@
 
 #define SAP_24GHZ_CH_COUNT (14)
 #define ACS_SCAN_EXPIRY_TIMEOUT_S 4
+
+/* Defines the BIT position of HT caps is support mode field of stainfo */
+#define HDD_HT_CAPS_PRESENT 0
+/* Defines the BIT position of VHT caps is support mode field of stainfo */
+#define HDD_VHT_CAPS_PRESENT 1
 
 /*
  * 11B, 11G Rate table include Basic rate and Extended rate
@@ -590,6 +596,7 @@ static int __hdd_hostapd_set_mac_address(struct net_device *dev, void *addr)
 	hdd_info("Changing MAC to " MAC_ADDRESS_STR " of interface %s ",
 		 MAC_ADDR_ARRAY(mac_addr.bytes),
 		 dev->name);
+	memcpy(&adapter->macAddressCurrent, psta_mac_addr->sa_data, ETH_ALEN);
 	memcpy(dev->dev_addr, psta_mac_addr->sa_data, ETH_ALEN);
 	EXIT();
 	return 0;
@@ -1486,10 +1493,14 @@ static void hdd_fill_station_info(hdd_adapter_t *pHostapdAdapter,
 	if (event->vht_caps.present) {
 		stainfo->vht_present = true;
 		hdd_copy_vht_caps(&stainfo->vht_caps, &event->vht_caps);
+		stainfo->support_mode |=
+				(stainfo->vht_present << HDD_VHT_CAPS_PRESENT);
 	}
 	if (event->ht_caps.present) {
 		stainfo->ht_present = true;
 		hdd_copy_ht_caps(&stainfo->ht_caps, &event->ht_caps);
+		stainfo->support_mode |=
+				(stainfo->ht_present << HDD_HT_CAPS_PRESENT);
 	}
 
 	/* Initialize DHCP info */
@@ -3271,44 +3282,14 @@ static __iw_softap_setparam(struct net_device *dev,
 {
 	hdd_adapter_t *pHostapdAdapter = (netdev_priv(dev));
 	tHalHandle hHal;
-	//BEGIN MOT a19110 IKDREL3KK-11113 Fix iwpriv panic
-	int *value;
-	uint8_t *mot_value; //MOT a19110 IKLOCSEN-3014 Use copy from user
-	int sub_cmd;
-	int set_value;
-	int *tmp = (int *) extra;
-	//END IKDREL3KK-11113
+	int *value = (int *)extra;
+	int sub_cmd = value[0];
+	int set_value = value[1];
 	QDF_STATUS status;
 	int ret = 0;
 	hdd_context_t *hdd_ctx;
 
 	ENTER_DEV(dev);
-
-	//BEGIN MOT a19110 IKDREL3KK-11113 Fix iwpriv panic to 8998
-	//BEGIN MOT a19110 IKLOCSEN-3014 use copy_from_user to avoid junk value
-	if (tmp[0] < 0 || tmp[0] > QCSAP_ENABLE_RTS_BURSTING) {
-		mot_value = (uint8_t *)kmalloc(wrqu->data.length+1, GFP_KERNEL);
-		if(copy_from_user((uint8_t *) mot_value, (uint8_t *)(wrqu->data.pointer), wrqu->data.length)) {
-			hdd_err("%s -- copy_from_user --data pointer failed! bailing",
-				__func__);
-		kfree(mot_value);
-		return -EFAULT;
-		}
-		sub_cmd = (int )(*(mot_value + 0));
-		set_value = (int )(*(mot_value + 1));
-		kfree(mot_value);
-	} else {
-		value = (int *)extra;
-		sub_cmd = value[0];
-		set_value = value[1];
-	}
-	//END IKLOCSEN-3014
-
-	if (!pHostapdAdapter || !pHostapdAdapter->pHddCtx) {
-		hdd_err("Either hostpad adapter is null or Hal ctx is null");
-		return -EINVAL;
-	}
-	//END IKDREL3KK-11113
 
 	hdd_ctx = WLAN_HDD_GET_CTX(pHostapdAdapter);
 	ret = wlan_hdd_validate_context(hdd_ctx);
@@ -4267,7 +4248,7 @@ int __iw_softap_modify_acl(struct net_device *dev,
 			   union iwreq_data *wrqu, char *extra)
 {
 	hdd_adapter_t *pHostapdAdapter = (netdev_priv(dev));
-	uint8_t *value = (uint8_t *) kmalloc(wrqu->data.length+1, GFP_KERNEL); //MOT IKLOCSEN-3014
+	uint8_t *value = (uint8_t *) extra;
 	uint8_t pPeerStaMac[QDF_MAC_ADDR_SIZE];
 	int listType, cmd, i;
 	int ret;
@@ -4278,19 +4259,8 @@ int __iw_softap_modify_acl(struct net_device *dev,
 
 	hdd_ctx = WLAN_HDD_GET_CTX(pHostapdAdapter);
 	ret = wlan_hdd_validate_context(hdd_ctx);
-	if (0 != ret) {
-		kfree(value); //MOT IKLOCSEN-3014
+	if (0 != ret)
 		return ret;
-	}
-
-	//BEGIN MOT a19110 IKLOCSEN-3014 use copy_from_user to avoid junk value
-        if(copy_from_user((uint8_t *) value, (uint8_t *)(wrqu->data.pointer), wrqu->data.length)) {
-            hdd_err("%s -- copy_from_user --data pointer failed! bailing",
-                  __func__);
-            kfree(value);
-            return -EFAULT;
-        }
-	//END IKLOCSEN-3014
 
 	for (i = 0; i < QDF_MAC_ADDR_SIZE; i++)
 		pPeerStaMac[i] = *(value + i);
@@ -4298,7 +4268,6 @@ int __iw_softap_modify_acl(struct net_device *dev,
 	listType = (int)(*(value + i));
 	i++;
 	cmd = (int)(*(value + i));
-	kfree(value);//MOT IKLOCSEN-3014
 
 	hdd_debug("Modify ACL mac:" MAC_ADDRESS_STR " type: %d cmd: %d",
 	       MAC_ADDR_ARRAY(pPeerStaMac), listType, cmd);
@@ -4375,8 +4344,7 @@ static __iw_softap_set_max_tx_power(struct net_device *dev,
 	hdd_adapter_t *pHostapdAdapter = (netdev_priv(dev));
 	hdd_context_t *hdd_ctx;
 	tHalHandle hHal = WLAN_HDD_GET_HAL_CTX(pHostapdAdapter);
-	//int *value = (int *)extra;
-	uint8_t *mot_value;
+	int *value = (int *)extra;
 	int set_value;
 	int ret;
 	struct qdf_mac_addr bssid = QDF_MAC_ADDR_BROADCAST_INITIALIZER;
@@ -4384,19 +4352,8 @@ static __iw_softap_set_max_tx_power(struct net_device *dev,
 
 	ENTER_DEV(dev);
 
-	mot_value = (uint8_t*)kmalloc(wrqu->data.length+1, GFP_KERNEL);
-
-	if (NULL == mot_value)
+	if (NULL == value)
 		return -ENOMEM;
-
-	if(copy_from_user((uint8_t *)mot_value, (uint8_t *)(wrqu->data.pointer), wrqu->data.length)) {
-		hdd_err("%s -- copy from user -- data pointer failed! bailing", __func__);
-		kfree(mot_value);
-		return -EFAULT;
-	}
-
-	set_value = (int)(*(mot_value + 0));
-	kfree(mot_value);
 
 	hdd_ctx = WLAN_HDD_GET_CTX(pHostapdAdapter);
 	ret = wlan_hdd_validate_context(hdd_ctx);
@@ -4407,6 +4364,7 @@ static __iw_softap_set_max_tx_power(struct net_device *dev,
 	qdf_copy_macaddr(&bssid, &pHostapdAdapter->macAddressCurrent);
 	qdf_copy_macaddr(&selfMac, &pHostapdAdapter->macAddressCurrent);
 
+	set_value = value[0];
 	if (QDF_STATUS_SUCCESS !=
 	    sme_set_max_tx_power(hHal, bssid, selfMac, set_value)) {
 		hdd_err("Setting maximum tx power failed");
@@ -4632,7 +4590,7 @@ static __iw_softap_disassoc_sta(struct net_device *dev,
 {
 	hdd_adapter_t *pHostapdAdapter = (netdev_priv(dev));
 	hdd_context_t *hdd_ctx;
-	uint8_t *peerMacAddr = (uint8_t *)kmalloc(wrqu->data.length+1, GFP_KERNEL); //MOT IKLOCSEN-3014
+	uint8_t *peerMacAddr;
 	int ret;
 	struct tagCsrDelStaParams del_sta_params;
 
@@ -4640,28 +4598,18 @@ static __iw_softap_disassoc_sta(struct net_device *dev,
 
 	if (!capable(CAP_NET_ADMIN)) {
 		hdd_err("permission check failed");
-		kfree(peerMacAddr); //MOT IKLOCSEN-3014
 		return -EPERM;
 	}
 
 	hdd_ctx = WLAN_HDD_GET_CTX(pHostapdAdapter);
 	ret = wlan_hdd_validate_context(hdd_ctx);
-	if (0 != ret) {
-		kfree(peerMacAddr); //MOT IKLOCSEN-3014
+	if (0 != ret)
 		return ret;
-	}
 
 	/* iwpriv tool or framework calls this ioctl with
 	 * data passed in extra (less than 16 octets);
 	 */
-	//BEGIN MOT a19110 IKLOCSEN-3014 use copy_from_user to avoid junk value
-        if(copy_from_user((uint8_t *) peerMacAddr, (uint8_t *)(wrqu->data.pointer), wrqu->data.length)) {
-            hdd_err("%s -- copy_from_user --data pointer failed! bailing",
-                  __func__);
-            kfree(peerMacAddr);
-            return -EFAULT;
-        }
-	//END IKLOCSEN-3014
+	peerMacAddr = (uint8_t *) (extra);
 
 	hdd_debug("data " MAC_ADDRESS_STR,
 	       MAC_ADDR_ARRAY(peerMacAddr));
@@ -4671,7 +4619,6 @@ static __iw_softap_disassoc_sta(struct net_device *dev,
 			&del_sta_params);
 	hdd_softap_sta_disassoc(pHostapdAdapter, &del_sta_params);
 
-	kfree(peerMacAddr); //MOT IKLOCSEN-3014
 	EXIT();
 	return 0;
 }
@@ -4775,7 +4722,7 @@ static int __iw_get_channel_list(struct net_device *dev,
 
 	if (SIR_BAND_2_4_GHZ == cur_band) {
 		band_start_channel = CHAN_ENUM_1;
-		band_end_channel = CHAN_ENUM_13;
+		band_end_channel = CHAN_ENUM_14;
 	} else if (SIR_BAND_5_GHZ == cur_band) {
 		band_start_channel = CHAN_ENUM_36;
 		band_end_channel = CHAN_ENUM_184;
@@ -7819,7 +7766,7 @@ static inline int wlan_hdd_set_udp_resp_offload(hdd_adapter_t *padapter,
 }
 #endif
 
-static void hdd_check_and_disconnect_sta_on_invalid_channel(
+void hdd_check_and_disconnect_sta_on_invalid_channel(
 		hdd_context_t *hdd_ctx)
 {
 	hdd_adapter_t *sta_adapter;
@@ -7924,13 +7871,11 @@ int wlan_hdd_restore_channels(hdd_context_t *hdd_ctx)
 		 * Restore the orginal states of the channels
 		 * only if we have cached non zero values
 		 */
-		if (cache_chann->channel_info[i].reg_status)
-			cds_set_channel_state(rf_channel,
-					      cache_chann->
-						channel_info[i].reg_status);
+		cds_set_channel_state(rf_channel,
+				      cache_chann->
+				      channel_info[i].reg_status);
 
-		if (cache_chann->channel_info[i].wiphy_status && wiphy_channel)
-			wiphy_channel->flags =
+		wiphy_channel->flags =
 				cache_chann->channel_info[i].wiphy_status;
 	}
 
@@ -7939,6 +7884,12 @@ int wlan_hdd_restore_channels(hdd_context_t *hdd_ctx)
 	status = sme_update_channel_list(hdd_ctx->hHal);
 	if (status)
 		hdd_err("Can't Restore channel list");
+	else
+		/*
+		 * Free the cache channels when the
+		 * disabled channels are restored
+		 */
+		wlan_hdd_free_cache_channels(hdd_ctx);
 	EXIT();
 
 	return 0;
@@ -8051,7 +8002,6 @@ int wlan_hdd_cfg80211_start_bss(hdd_adapter_t *pHostapdAdapter,
 	bool disable_fw_tdls_state = false;
 	uint8_t ignore_cac = 0;
 	uint8_t beacon_fixed_len;
-	hdd_adapter_t *sta_adapter;
 
 	ENTER();
 
@@ -8085,24 +8035,7 @@ int wlan_hdd_cfg80211_start_bss(hdd_adapter_t *pHostapdAdapter,
 	 * disconnect the STA interface first if connection or key exchange is
 	 * in progress and then start SAP interface.
 	 */
-	sta_adapter = hdd_get_sta_connection_in_progress(pHddCtx);
-	if (sta_adapter) {
-		hdd_debug("Disconnecting STA with session id: %d",
-			  sta_adapter->sessionId);
-		wlan_hdd_disconnect(sta_adapter, eCSR_DISCONNECT_REASON_DEAUTH);
-	}
-
-	/*
-	 * Reject start bss if reassoc in progress on any adapter.
-	 * sme_is_any_session_in_middle_of_roaming is for LFR2 and
-	 * hdd_is_roaming_in_progress is for LFR3
-	 */
-	if (sme_is_any_session_in_middle_of_roaming(hHal) ||
-	    hdd_is_roaming_in_progress(pHddCtx)) {
-		hdd_info("Reassociation in progress");
-		ret = -EINVAL;
-		goto ret_status;
-	}
+	hdd_abort_ongoing_sta_connection(pHddCtx);
 
 	/*
 	 * Disable Roaming on all adapters before starting bss
@@ -8139,18 +8072,6 @@ int wlan_hdd_cfg80211_start_bss(hdd_adapter_t *pHostapdAdapter,
 		if (cds_is_force_scc())
 			hdd_check_and_disconnect_sta_on_invalid_channel(
 								       pHddCtx);
-	}
-
-	if (pHostapdAdapter->device_mode == QDF_SAP_MODE &&
-	    !iniConfig->disable_channel) {
-		/*
-		 * Disable the channels received in command
-		 * SET_DISABLE_CHANNEL_LIST
-		 */
-		status = wlan_hdd_disable_channels(pHddCtx);
-		if (!QDF_IS_STATUS_SUCCESS(status))
-			hdd_err("Disable channel list fail");
-		hdd_check_and_disconnect_sta_on_invalid_channel(pHddCtx);
 	}
 
 	pConfig = &pHostapdAdapter->sessionCtx.ap.sapConfig;
@@ -8656,6 +8577,8 @@ int wlan_hdd_cfg80211_start_bss(hdd_adapter_t *pHostapdAdapter,
 		}
 	}
 
+	hdd_thermal_mitigation_disable(pHddCtx);
+
 	if (!cds_set_connection_in_progress(true)) {
 		hdd_err("Can't start BSS: set connnection in progress failed");
 		ret = -EINVAL;
@@ -8738,9 +8661,6 @@ exit:
 	return 0;
 
 error:
-	if (pHostapdAdapter->device_mode == QDF_SAP_MODE &&
-	    !iniConfig->disable_channel)
-		wlan_hdd_restore_channels(pHddCtx);
 	/* Revert the indoor to passive marking if START BSS fails */
 	if (iniConfig->disable_indoor_channel &&
 			pHostapdAdapter->device_mode == QDF_SAP_MODE) {
@@ -8753,6 +8673,8 @@ error:
 	qdf_atomic_set(
 		&pHostapdAdapter->sessionCtx.ap.acs_in_progress, 0);
 	wlan_hdd_undo_acs(pHostapdAdapter);
+
+	hdd_thermal_mitigation_enable(pHddCtx);
 
 enable_roaming:
 	/* Enable Roaming after start bss in case of failure */
@@ -8778,7 +8700,6 @@ static int __wlan_hdd_cfg80211_stop_ap(struct wiphy *wiphy,
 	hdd_adapter_t *pAdapter = WLAN_HDD_GET_PRIV_PTR(dev);
 	hdd_context_t *pHddCtx = wiphy_priv(wiphy);
 	hdd_scaninfo_t *pScanInfo = NULL;
-	hdd_adapter_t *staAdapter = NULL;
 	QDF_STATUS status = QDF_STATUS_E_FAILURE;
 	QDF_STATUS qdf_status = QDF_STATUS_E_FAILURE;
 	tSirUpdateIE updateIE;
@@ -8788,6 +8709,7 @@ static int __wlan_hdd_cfg80211_stop_ap(struct wiphy *wiphy,
 	hdd_adapter_list_node_t *pAdapterNode = NULL;
 	hdd_adapter_list_node_t *pNext = NULL;
 	tsap_Config_t *pConfig;
+	hdd_adapter_t *staAdapter;
 
 	hdd_info("enter(%s)", netdev_name(dev));
 
@@ -8835,12 +8757,7 @@ static int __wlan_hdd_cfg80211_stop_ap(struct wiphy *wiphy,
 	 * the STA and complete the SAP operation. STA will reconnect
 	 * after SAP stop is done.
 	 */
-	staAdapter = hdd_get_sta_connection_in_progress(pHddCtx);
-	if (staAdapter) {
-		hdd_debug("Disconnecting STA with session id: %d",
-			  staAdapter->sessionId);
-		wlan_hdd_disconnect(staAdapter, eCSR_DISCONNECT_REASON_DEAUTH);
-	}
+	hdd_abort_ongoing_sta_connection(pHddCtx);
 
 	if (pAdapter->device_mode == QDF_SAP_MODE) {
 		wlan_hdd_del_station(pAdapter);
@@ -8991,8 +8908,9 @@ static int __wlan_hdd_cfg80211_stop_ap(struct wiphy *wiphy,
 		global_p2p_connection_status = P2P_NOT_ACTIVE;
 	}
 #endif
-	pAdapter->sessionId = HDD_SESSION_ID_INVALID;
 	wlan_hdd_check_conc_and_update_tdls_state(pHddCtx, false);
+	hdd_thermal_mitigation_enable(pHddCtx);
+
 	EXIT();
 	return ret;
 }
@@ -9106,7 +9024,7 @@ static void hdd_update_beacon_rate(hdd_adapter_t *adapter,
 	struct cfg80211_bitrate_mask *beacon_rate_mask;
 	enum  nl80211_band band;
 
-	band = params->chandef.chan->band;
+	band = (enum nl80211_band)params->chandef.chan->band;
 	beacon_rate_mask = &params->beacon_rate;
 	if (beacon_rate_mask->control[band].legacy) {
 		adapter->sessionCtx.ap.sapConfig.beacon_tx_rate =

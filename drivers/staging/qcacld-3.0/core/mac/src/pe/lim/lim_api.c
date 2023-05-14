@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -607,6 +607,8 @@ void lim_cleanup(tpAniSirGlobal pMac)
 	}
 
 	if (pMac->lim.gpLimMlmSetKeysReq != NULL) {
+		qdf_mem_zero(pMac->lim.gpLimMlmSetKeysReq,
+			     sizeof(tLimMlmSetKeysReq));
 		qdf_mem_free(pMac->lim.gpLimMlmSetKeysReq);
 		pMac->lim.gpLimMlmSetKeysReq = NULL;
 	}
@@ -721,9 +723,6 @@ static void pe_shutdown_notifier_cb(void *ctx)
 			if (LIM_IS_AP_ROLE(session))
 				qdf_mc_timer_stop(&session->
 						 protection_fields_reset_timer);
-#ifdef WLAN_FEATURE_11W
-			qdf_mc_timer_stop(&session->pmfComebackTimer);
-#endif
 		}
 	}
 }
@@ -1182,7 +1181,8 @@ void pe_register_callbacks_with_wma(tpAniSirGlobal pMac,
 
 	retStatus = wma_register_roaming_callbacks(p_cds_gctx,
 			ready_req->csr_roam_synch_cb,
-			ready_req->pe_roam_synch_cb);
+			ready_req->pe_roam_synch_cb,
+			ready_req->csr_roam_pmkid_req_cb);
 	if (retStatus != QDF_STATUS_SUCCESS)
 		pe_err("Registering roaming callbacks with WMA failed");
 
@@ -2002,6 +2002,7 @@ static inline void lim_copy_and_free_hlp_data_from_session(
 {}
 #endif
 
+#ifdef WLAN_DEBUG
 static const char *pe_roam_op_code_to_string(uint8_t roam_op_code)
 {
 	switch (roam_op_code) {
@@ -2016,6 +2017,7 @@ static const char *pe_roam_op_code_to_string(uint8_t roam_op_code)
 		return "none";
 	}
 }
+#endif
 
 /**
  * pe_roam_synch_callback() - PE level callback for roam synch propagation
@@ -2555,3 +2557,58 @@ QDF_STATUS lim_update_ext_cap_ie(tpAniSirGlobal mac_ctx,
 	return QDF_STATUS_SUCCESS;
 }
 
+#define LIM_RSN_OUI_SIZE 4
+
+struct rsn_oui_akm_type_map {
+	enum ani_akm_type akm_type;
+	uint8_t rsn_oui[LIM_RSN_OUI_SIZE];
+};
+
+static const struct rsn_oui_akm_type_map rsn_oui_akm_type_mapping_table[] = {
+	{ANI_AKM_TYPE_RSN,                  {0x00, 0x0F, 0xAC, 0x01} },
+	{ANI_AKM_TYPE_RSN_PSK,              {0x00, 0x0F, 0xAC, 0x02} },
+	{ANI_AKM_TYPE_FT_RSN,               {0x00, 0x0F, 0xAC, 0x03} },
+	{ANI_AKM_TYPE_FT_RSN_PSK,           {0x00, 0x0F, 0xAC, 0x04} },
+	{ANI_AKM_TYPE_RSN_8021X_SHA256,     {0x00, 0x0F, 0xAC, 0x05} },
+	{ANI_AKM_TYPE_RSN_PSK_SHA256,       {0x00, 0x0F, 0xAC, 0x06} },
+#ifdef WLAN_FEATURE_SAE
+	{ANI_AKM_TYPE_SAE,                  {0x00, 0x0F, 0xAC, 0x08} },
+	{ANI_AKM_TYPE_FT_SAE,               {0x00, 0x0F, 0xAC, 0x09} },
+#endif
+	{ANI_AKM_TYPE_SUITEB_EAP_SHA256,    {0x00, 0x0F, 0xAC, 0x0B} },
+	{ANI_AKM_TYPE_SUITEB_EAP_SHA384,    {0x00, 0x0F, 0xAC, 0x0C} },
+	{ANI_AKM_TYPE_FT_SUITEB_EAP_SHA384, {0x00, 0x0F, 0xAC, 0x0D} },
+	{ANI_AKM_TYPE_FILS_SHA256,          {0x00, 0x0F, 0xAC, 0x0E} },
+	{ANI_AKM_TYPE_FILS_SHA384,          {0x00, 0x0F, 0xAC, 0x0F} },
+	{ANI_AKM_TYPE_FT_FILS_SHA256,       {0x00, 0x0F, 0xAC, 0x10} },
+	{ANI_AKM_TYPE_FT_FILS_SHA384,       {0x00, 0x0F, 0xAC, 0x11} },
+	{ANI_AKM_TYPE_OWE,                  {0x00, 0x0F, 0xAC, 0x12} },
+#ifdef FEATURE_WLAN_ESE
+	{ANI_AKM_TYPE_CCKM,                 {0x00, 0x40, 0x96, 0x00} },
+#endif
+	{ANI_AKM_TYPE_OSEN,                 {0x50, 0x6F, 0x9A, 0x01} },
+	{ANI_AKM_TYPE_DPP_RSN,              {0x50, 0x6F, 0x9A, 0x02} },
+	{ANI_AKM_TYPE_WPA,                  {0x00, 0x50, 0xF2, 0x01} },
+	{ANI_AKM_TYPE_WPA_PSK,              {0x00, 0x50, 0xF2, 0x02} },
+	/* Add akm type above here */
+	{ANI_AKM_TYPE_UNKNOWN, {0} },
+};
+
+enum ani_akm_type lim_translate_rsn_oui_to_akm_type(uint8_t auth_suite[4])
+{
+	const struct rsn_oui_akm_type_map *map;
+	enum ani_akm_type akm_type;
+
+	map = rsn_oui_akm_type_mapping_table;
+	while (true) {
+		akm_type = map->akm_type;
+		if ((akm_type == ANI_AKM_TYPE_UNKNOWN) ||
+		    (qdf_mem_cmp(auth_suite, map->rsn_oui, 4) == 0))
+			break;
+		map++;
+	}
+
+	pe_debug("akm_type: %d", akm_type);
+
+	return akm_type;
+}

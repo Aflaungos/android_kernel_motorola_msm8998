@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -657,16 +657,18 @@ static void hdd_update_dbs_scan_ctrl_ext_flag(hdd_context_t *hdd_ctx,
 		goto end;
 	}
 
-	if (scan_req->scan_flags & SME_SCAN_FLAG_HIGH_ACCURACY) {
-		hdd_debug("DBS disabled due to high accuracy scan request");
-		goto end;
-	}
-	if (scan_req->scan_flags & SME_SCAN_FLAG_LOW_POWER ||
-	    scan_req->scan_flags & SME_SCAN_FLAG_LOW_SPAN) {
-		hdd_debug("DBS enable due to Low span/power request 0x%x",
-							scan_req->scan_flags);
-		scan_dbs_policy = SME_SCAN_DBS_POLICY_IGNORE_DUTY;
-		goto end;
+	if (hdd_ctx->config->honour_nl_scan_policy_flags) {
+		if (scan_req->scan_flags & SME_SCAN_FLAG_HIGH_ACCURACY) {
+			hdd_debug("DBS disabled for high accuracy request");
+			goto end;
+		}
+		if (scan_req->scan_flags & SME_SCAN_FLAG_LOW_POWER ||
+		    scan_req->scan_flags & SME_SCAN_FLAG_LOW_SPAN) {
+			hdd_debug("DBS enable for Low span/power request 0x%x",
+				  scan_req->scan_flags);
+			scan_dbs_policy = SME_SCAN_DBS_POLICY_IGNORE_DUTY;
+			goto end;
+		}
 	}
 	if (!(hdd_ctx->is_dbs_scan_duty_cycle_enabled)) {
 		scan_dbs_policy = SME_SCAN_DBS_POLICY_IGNORE_DUTY;
@@ -778,11 +780,13 @@ static bool wlan_hdd_is_scan_pending(hdd_adapter_t *adapter)
  */
 static void hdd_scan_inactivity_timer_handler(unsigned long scan_req)
 {
+#ifdef WLAN_DEBUG
 	struct hdd_scan_req *hdd_scan_req = (struct hdd_scan_req *)scan_req;
 
 	hdd_debug("scan_id %d, enqueue timestamp %u, flags 0x%X",
 		hdd_scan_req->scan_id, hdd_scan_req->timestamp,
 		hdd_scan_req->scan_req_flags);
+#endif
 
 	if (cds_is_load_or_unload_in_progress())
 		hdd_err("%s: Module (un)loading; Ignore hdd scan req timeout",
@@ -2323,13 +2327,8 @@ static int __wlan_hdd_cfg80211_scan(struct wiphy *wiphy,
 	}
 
 	if (request->n_channels) {
-/*WLAN_FEATURE_CHANNEL_ONE: only use for payton to solve scan issue caused by epa on NA version,*/
-#ifdef WLAN_FEATURE_CHANNEL_ONE
-		char chList[((request->n_channels + 1)* 5) + 1];
-#else
 		char chList[(request->n_channels * 5) + 1];
-#endif
-		int len=0;
+		int len;
 
 		channelList = qdf_mem_malloc(request->n_channels);
 		if (NULL == channelList) {
@@ -2337,13 +2336,7 @@ static int __wlan_hdd_cfg80211_scan(struct wiphy *wiphy,
 			status = -ENOMEM;
 			goto free_mem;
 		}
-#ifdef WLAN_FEATURE_CHANNEL_ONE
-		channelList[num_chan++] = request->channels[0]->hw_value;
-		len += snprintf(chList + len, 5, "%d ", channelList[0]);
-		for(i = 0; i < request->n_channels; i++) {
-#else
 		for (i = 0, len = 0; i < request->n_channels; i++) {
-#endif
 			if (cds_is_dsrc_channel(cds_chan_to_freq(
 			    request->channels[i]->hw_value)))
 				continue;
@@ -3642,12 +3635,6 @@ static int __wlan_hdd_cfg80211_sched_scan_start(struct wiphy *wiphy,
 	pPnoRequest->delay_start_time =
 		hdd_config_sched_scan_start_delay(request);
 	wlan_hdd_sched_scan_update_relative_rssi(pPnoRequest, request);
-
-        //BEGIN MOT a19110 IKSWM-31041 Modify PNO timers
-        pPnoRequest->fast_scan_period = 45000;
-        pPnoRequest->fast_scan_max_cycles = 7;
-        pPnoRequest->slow_scan_period = 480000;
-        //END IKSWM-31041
 
 	hdd_debug("Base scan interval: %d sec PNOScanTimerRepeatValue: %d",
 			(pPnoRequest->fast_scan_period / 1000),

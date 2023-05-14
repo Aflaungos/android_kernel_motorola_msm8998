@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -3670,6 +3670,7 @@ static void wma_send_status_to_suspend_ind(tp_wma_handle wma, bool suspended)
  *
  * Return: reason code in string format
  */
+#ifdef WLAN_DEBUG
 static const u8 *wma_wow_wake_reason_str(A_INT32 wake_reason)
 {
 	switch (wake_reason) {
@@ -3771,10 +3772,13 @@ static const u8 *wma_wow_wake_reason_str(A_INT32 wake_reason)
 		return "DEBUG_TEST";
 	case WOW_REASON_CHIP_POWER_FAILURE_DETECT:
 		return "CHIP_POWER_FAILURE_DETECT";
+	case WOW_REASON_ROAM_PMKID_REQUEST:
+		return "ROAM_PMKID_REQUEST";
 	default:
 		return "unknown";
 	}
 }
+#endif
 
 /**
  * wma_wow_stats_display() - display wow wake up stats
@@ -4089,6 +4093,9 @@ static int wow_get_wmi_eventid(int32_t reason, uint32_t tag)
 	case WOW_REASON_ROAM_HO:
 		event_id = WMI_ROAM_EVENTID;
 		break;
+	case WOW_REASON_ROAM_PMKID_REQUEST:
+		event_id = WMI_ROAM_PMKID_REQUEST_EVENTID;
+		break;
 	default:
 		WMA_LOGD(FL("Unexpected WOW reason : %s(%d)"),
 			 wma_wow_wake_reason_str(reason), reason);
@@ -4125,6 +4132,7 @@ static bool tlv_check_required(int32_t reason)
 	case WOW_REASON_NAN_EVENT:
 	case WOW_REASON_NAN_DATA:
 	case WOW_REASON_ROAM_HO:
+	case WOW_REASON_ROAM_PMKID_REQUEST:
 		return true;
 	default:
 		return false;
@@ -4141,6 +4149,7 @@ static bool tlv_check_required(int32_t reason)
  *
  * Return: string for proto subtype for data packet
  */
+#ifdef WLAN_DEBUG
 static const char *
 wma_pkt_proto_subtype_to_string(enum qdf_proto_subtype proto_subtype)
 {
@@ -4201,6 +4210,7 @@ wma_pkt_proto_subtype_to_string(enum qdf_proto_subtype proto_subtype)
 		return "Invalid Packet";
 	}
 }
+#endif
 
 /**
  * wma_wow_get_pkt_proto_subtype() - get the proto subtype
@@ -4660,6 +4670,7 @@ exit_handler:
 	wma_beacon_miss_handler(wma, wake_info->vdev_id, 0);
 }
 
+#ifdef WLAN_DEBUG
 static const char *wma_vdev_type_str(uint32_t vdev_type)
 {
 	switch (vdev_type) {
@@ -4681,6 +4692,7 @@ static const char *wma_vdev_type_str(uint32_t vdev_type)
 		return "unknown";
 	}
 }
+#endif
 
 #ifdef FEATURE_WLAN_D0WOW
  /**
@@ -4944,8 +4956,8 @@ int wma_wow_wakeup_host_event(void *handle, uint8_t *event,
 		 */
 		wma_peer_debug_log(wake_info->vdev_id,
 				DEBUG_WOW_ROAM_EVENT, DEBUG_INVALID_PEER_ID,
-				NULL, NULL,
-				wake_info->wake_reason, wow_buf_pkt_len);
+				NULL, NULL, wake_info->wake_reason,
+				wow_buf_pkt_len);
 		WMA_LOGD("Host woken up because of roam event");
 		if (param_buf->wow_packet_buffer) {
 			/* Roam event is embedded in wow_packet_buffer */
@@ -5051,6 +5063,14 @@ int wma_wow_wakeup_host_event(void *handle, uint8_t *event,
 		del_sta_ctx->reasonCode = HAL_DEL_STA_REASON_CODE_KEEP_ALIVE;
 		wma_send_msg(wma, SIR_LIM_DELETE_STA_CONTEXT_IND,
 			     (void *)del_sta_ctx, 0);
+		break;
+	case WOW_REASON_ROAM_PMKID_REQUEST:
+		WMA_LOGD("Host woken up because of PMKID request event");
+		if (param_buf->wow_packet_buffer)
+			wma_roam_pmkid_request_event_handler(handle,
+				wmi_cmd_struct_ptr, wow_buf_pkt_len);
+		else
+			WMA_LOGD("No wow_packet_buffer present");
 		break;
 	default:
 		break;
@@ -6929,6 +6949,7 @@ QDF_STATUS wma_process_tsm_stats_req(tp_wma_handle wma_handler,
 		return QDF_STATUS_E_NOMEM;
 	}
 	pTsmRspParams->staId = pStats->staId;
+	qdf_copy_macaddr(&pTsmRspParams->bssid, &pStats->bssId);
 	pTsmRspParams->rc = eSIR_FAILURE;
 	pTsmRspParams->tsmStatsReq = pStats;
 	pTsmMetric = &pTsmRspParams->tsmMetrics;
@@ -7804,21 +7825,20 @@ QDF_STATUS wma_process_add_periodic_tx_ptrn_ind(WMA_HANDLE handle,
 		return QDF_STATUS_E_INVAL;
 	}
 
-	params_ptr = qdf_mem_malloc(sizeof(*params_ptr));
-
-	if (!params_ptr) {
-		WMA_LOGE(
-			"%s: unable to allocate memory for periodic_tx_pattern",
-			 __func__);
-		return QDF_STATUS_E_NOMEM;
-	}
-
 	if (!wma_find_vdev_by_addr(wma_handle,
 				   pAddPeriodicTxPtrnParams->mac_address.bytes,
 				   &vdev_id)) {
 		WMA_LOGE("%s: Failed to find vdev id for %pM", __func__,
 			 pAddPeriodicTxPtrnParams->mac_address.bytes);
 		return QDF_STATUS_E_INVAL;
+	}
+
+	params_ptr = qdf_mem_malloc(sizeof(*params_ptr));
+	if (!params_ptr) {
+		WMA_LOGE(
+			"%s: unable to allocate memory for periodic_tx_pattern",
+			 __func__);
+		return QDF_STATUS_E_NOMEM;
 	}
 
 	params_ptr->ucPtrnId = pAddPeriodicTxPtrnParams->ucPtrnId;
@@ -9743,8 +9763,9 @@ int wma_dfs_indicate_radar(struct ieee80211com *ic,
 	if (!pmac->sap.SapDfsInfo.disable_dfs_ch_switch)
 		wma->dfs_ic->disable_phy_err_processing = true;
 
-	if ((ichan->ic_ieee != (wma->dfs_ic->last_radar_found_chan)) ||
-	    (pmac->sap.SapDfsInfo.disable_dfs_ch_switch == true)) {
+	if (!cds_is_sta_sap_scc_allowed_on_dfs_channel() &&
+	    ((ichan->ic_ieee != (wma->dfs_ic->last_radar_found_chan)) ||
+	    (pmac->sap.SapDfsInfo.disable_dfs_ch_switch == true))) {
 		radar_event = (struct wma_dfs_radar_indication *)
 			qdf_mem_malloc(sizeof(struct wma_dfs_radar_indication));
 		if (radar_event == NULL) {
@@ -11118,6 +11139,9 @@ int wma_unified_power_debug_stats_event_handler(void *handle,
 
 	mac->sme.power_stats_resp_callback(power_stats_results,
 			mac->sme.power_debug_stats_context);
+
+	mac->sme.power_stats_resp_callback = NULL;
+	mac->sme.power_debug_stats_context = NULL;
 	qdf_mem_free(power_stats_results);
 	return 0;
 }

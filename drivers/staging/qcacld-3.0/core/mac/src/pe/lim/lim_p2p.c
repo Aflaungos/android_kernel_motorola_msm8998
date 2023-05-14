@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -79,7 +79,8 @@ static QDF_STATUS lim_send_hal_req_remain_on_chan_offload(tpAniSirGlobal pMac,
 		return QDF_STATUS_E_INVAL;
 	}
 
-	pScanOffloadReq = qdf_mem_malloc(sizeof(tSirScanOffloadReq));
+	pScanOffloadReq = qdf_mem_malloc(sizeof(tSirScanOffloadReq) +
+					 sizeof(uint8_t));
 	if (NULL == pScanOffloadReq) {
 		pe_err("Memory allocation failed for pScanOffloadReq");
 		return QDF_STATUS_E_NOMEM;
@@ -373,7 +374,8 @@ void lim_remain_on_chn_rsp(tpAniSirGlobal pMac, QDF_STATUS status, uint32_t *dat
 void lim_send_sme_mgmt_frame_ind(tpAniSirGlobal pMac, uint8_t frameType,
 				 uint8_t *frame, uint32_t frameLen,
 				 uint16_t sessionId, uint32_t rxChannel,
-				 tpPESession psessionEntry, int8_t rxRssi)
+				 tpPESession session_entry,
+				 int8_t rx_rssi, enum rxmgmt_flags rx_flags)
 {
 	tpSirSmeMgmtFrameInd pSirSmeMgmtFrame = NULL;
 	uint16_t length;
@@ -396,8 +398,9 @@ void lim_send_sme_mgmt_frame_ind(tpAniSirGlobal pMac, uint8_t frameType,
 	pSirSmeMgmtFrame->frame_len = frameLen;
 	pSirSmeMgmtFrame->sessionId = sessionId;
 	pSirSmeMgmtFrame->frameType = frameType;
-	pSirSmeMgmtFrame->rxRssi = rxRssi;
+	pSirSmeMgmtFrame->rxRssi = rx_rssi;
 	pSirSmeMgmtFrame->rxChan = rxChannel;
+	pSirSmeMgmtFrame->rx_flags = rx_flags;
 
 	qdf_mem_zero(pSirSmeMgmtFrame->frameBuf, frameLen);
 	qdf_mem_copy(pSirSmeMgmtFrame->frameBuf, frame, frameLen);
@@ -774,3 +777,90 @@ tSirRetStatus __lim_process_sme_no_a_update(tpAniSirGlobal pMac, uint32_t *pMsgB
 	return eSIR_SUCCESS;
 } /*** end __limProcessSmeGoNegReq() ***/
 
+bool lim_p2p_check_oui_and_force_1x1(tpAniSirGlobal mac_ctx,
+				     uint8_t *assoc_ie, uint32_t assoc_ie_len)
+{
+	const uint8_t *vendor_ie, *p2p_ie, *pos;
+	uint8_t rem_len, attr;
+	uint16_t attr_len;
+
+	if (!assoc_ie || !assoc_ie_len)
+		return false;
+
+	vendor_ie = (uint8_t *)limGetP2pIEPtr(mac_ctx, assoc_ie, assoc_ie_len);
+	if (!vendor_ie) {
+		pe_debug("P2P IE not found");
+		return false;
+	}
+
+	rem_len = vendor_ie[1];
+	if (rem_len < (2 + SIR_MAC_P2P_OUI_SIZE) ||
+	    rem_len > SIR_MAC_MAX_IE_LENGTH) {
+		pe_err("Invalid IE len %d", rem_len);
+		return false;
+	}
+
+	p2p_ie = vendor_ie + HEADER_LEN_P2P_IE;
+	rem_len -= SIR_MAC_P2P_OUI_SIZE;
+
+	while (rem_len) {
+		attr = p2p_ie[0];
+		attr_len = LE_READ_2(&p2p_ie[1]);
+		if (attr_len > rem_len)  {
+			pe_err("Invalid len %d for elem:%d", attr_len, attr);
+			return false;
+		}
+
+		switch (attr) {
+		case P2P_ATTR_CAPABILITY:
+		case P2P_ATTR_DEVICE_ID:
+		case P2P_ATTR_GROUP_OWNER_INTENT:
+		case P2P_ATTR_STATUS:
+		case P2P_ATTR_LISTEN_CHANNEL:
+		case P2P_ATTR_OPERATING_CHANNEL:
+		case P2P_ATTR_GROUP_INFO:
+		case P2P_ATTR_MANAGEABILITY:
+		case P2P_ATTR_CHANNEL_LIST:
+			break;
+
+		case P2P_ATTR_DEVICE_INFO:
+			if (attr_len < (QDF_MAC_ADDR_SIZE +
+					MAX_CONFIG_METHODS_LEN + 8 +
+					DEVICE_CATEGORY_MAX_LEN)) {
+				pe_err("Invalid Device info attr len %d",
+				       attr_len);
+				return false;
+			}
+
+			/* move by attr id and 2 bytes of attr len */
+			pos = p2p_ie + 3;
+
+			/*
+			 * the P2P Device info is of format:
+			 * attr_id - 1 byte
+			 * attr_len - 2 bytes
+			 * device mac addr - 6 bytes
+			 * config methods - 2 bytes
+			 * primary device type - 8bytes
+			 *  -primary device type category - 1 byte
+			 *  -primary device type oui - 4bytes
+			 * number of secondary device type - 2 bytes
+			 */
+			pos += ETH_ALEN + MAX_CONFIG_METHODS_LEN +
+			       DEVICE_CATEGORY_MAX_LEN;
+
+			if (!qdf_mem_cmp(pos, P2P_1X1_WAR_OUI,
+					 P2P_1X1_OUI_LEN))
+				return true;
+
+			break;
+		default:
+			pe_err("Invalid P2P attribute");
+			break;
+		}
+		p2p_ie += (3 + attr_len);
+		rem_len -= (3 + attr_len);
+	}
+
+	return false;
+}

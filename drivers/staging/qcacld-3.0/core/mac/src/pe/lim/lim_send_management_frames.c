@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1204,7 +1204,7 @@ lim_send_assoc_rsp_mgmt_frame(tpAniSirGlobal mac_ctx,
 				frm.HTCaps.shortGI40MHz = 0;
 
 			populate_dot11f_ht_info(mac_ctx, &frm.HTInfo,
-				pe_session);
+						pe_session);
 		}
 		pe_debug("SupportedChnlWidth: %d, mimoPS: %d, GF: %d, short GI20:%d, shortGI40: %d, dsssCck: %d, AMPDU Param: %x",
 			frm.HTCaps.supportedChannelWidthSet,
@@ -1222,6 +1222,22 @@ lim_send_assoc_rsp_mgmt_frame(tpAniSirGlobal mac_ctx,
 			populate_dot11f_vht_operation(mac_ctx, pe_session,
 					&frm.VHTOperation);
 			is_vht = true;
+		} else if (sta->mlmStaContext.force_1x1 &&
+			   frm.HTCaps.present) {
+			/*
+			 * WAR: In P2P GO mode, if the P2P client device
+			 * is only HT capable and not VHT capable, but the P2P
+			 * GO device is VHT capable and advertises 2x2 NSS with
+			 * HT capablity client device, which results in IOT
+			 * issues.
+			 * When GO is operating in DBS mode, GO beacons
+			 * advertise 2x2 capability but include OMN IE to
+			 * indicate current operating mode of 1x1. But here
+			 * peer device is only HT capable and will not
+			 * understand OMN IE.
+			 */
+			frm.HTInfo.basicMCSSet[1] = 0;
+			frm.HTCaps.supportedMCSSet[1] = 0;
 		}
 
 		if (pe_session->vhtCapability &&
@@ -1597,7 +1613,6 @@ static QDF_STATUS lim_assoc_tx_complete_cnf(tpAniSirGlobal mac_ctx,
  *
  * Return: Void
  */
-
 void
 lim_send_assoc_req_mgmt_frame(tpAniSirGlobal mac_ctx,
 			      tLimMlmAssocReq *mlm_assoc_req,
@@ -1614,6 +1629,7 @@ lim_send_assoc_req_mgmt_frame(tpAniSirGlobal mac_ctx,
 	void *packet;
 	QDF_STATUS qdf_status;
 	uint16_t add_ie_len, assoc_ack_status;
+	uint16_t current_len = 0, vendor_ie_len = 0;
 	uint8_t *add_ie;
 	uint8_t *wps_ie = NULL;
 	uint8_t power_caps = false;
@@ -1630,7 +1646,7 @@ lim_send_assoc_req_mgmt_frame(tpAniSirGlobal mac_ctx,
 	uint32_t bcn_ie_len = 0;
 	uint32_t aes_block_size_len = 0;
 	enum rateid min_rid = RATEID_DEFAULT;
-	uint8_t *mbo_ie = NULL;
+	uint8_t *mbo_ie = NULL, *vendor_ies = NULL;
 	uint8_t mbo_ie_len = 0;
 
 	if (NULL == pe_session) {
@@ -1938,12 +1954,39 @@ lim_send_assoc_req_mgmt_frame(tpAniSirGlobal mac_ctx,
 					  mbo_ie, DOT11F_IE_MBO_IE_MAX_LEN);
 		if (sir_status != eSIR_SUCCESS) {
 			pe_err("Failed to strip MBO IE");
-			goto free_mbo_ie;
+			goto end;
 		}
 
 		/* Include the EID and length fields */
 		mbo_ie_len = mbo_ie[1] + 2;
 		pe_debug("Stripped MBO IE of length %d", mbo_ie_len);
+	}
+
+	/*
+	 * Strip rest of the vendor IEs and append to the assoc request frame.
+	 * Append the IEs just before MBO IEs as MBO IEs have to be at the
+	 * end of the frame.
+	 */
+	if (wlan_cfg_get_ie_ptr(add_ie, add_ie_len, SIR_MAC_EID_VENDOR,
+				ONE_BYTE)) {
+		vendor_ies = qdf_mem_malloc(MAX_VENDOR_IES_LEN + 2);
+		if (vendor_ies) {
+			current_len = add_ie_len;
+			sir_status = lim_strip_ie(mac_ctx, add_ie, &add_ie_len,
+						  SIR_MAC_EID_VENDOR, ONE_BYTE,
+						  NULL,
+						  0,
+						  vendor_ies,
+						  MAX_VENDOR_IES_LEN);
+			if (sir_status != eSIR_SUCCESS) {
+				pe_err("Failed to strip Vendor IEs");
+				goto end;
+			}
+
+			vendor_ie_len = current_len - add_ie_len;
+			pe_debug("Stripped vendor IEs of size: %u",
+				 current_len);
+		}
 	}
 
 	/*
@@ -1972,7 +2015,7 @@ lim_send_assoc_req_mgmt_frame(tpAniSirGlobal mac_ctx,
 	}
 
 	bytes = payload + sizeof(tSirMacMgmtHdr) +
-			aes_block_size_len + mbo_ie_len;
+			aes_block_size_len + mbo_ie_len + vendor_ie_len;
 
 	qdf_status = cds_packet_alloc((uint16_t) bytes, (void **)&frame,
 				(void **)&packet);
@@ -2011,6 +2054,11 @@ lim_send_assoc_req_mgmt_frame(tpAniSirGlobal mac_ctx,
 	} else if (DOT11F_WARNED(status)) {
 		pe_warn("Assoc request pack warning (0x%08x)", status);
 	}
+
+	/* Copy the vendor IEs to the end of the frame */
+	qdf_mem_copy(frame + sizeof(tSirMacMgmtHdr) + payload,
+		     vendor_ies, vendor_ie_len);
+	payload = payload + vendor_ie_len;
 
 	/* Copy the MBO IE to the end of the frame */
 	qdf_mem_copy(frame + sizeof(tSirMacMgmtHdr) + payload,
@@ -2088,12 +2136,9 @@ lim_send_assoc_req_mgmt_frame(tpAniSirGlobal mac_ctx,
 		/* Pkt will be freed up by the callback */
 		goto end;
 	}
-
-free_mbo_ie:
-	if (mbo_ie)
-		qdf_mem_free(mbo_ie);
-
 end:
+	qdf_mem_free(vendor_ies);
+	qdf_mem_free(mbo_ie);
 	/* Free up buffer allocated for mlm_assoc_req */
 	qdf_mem_free(mlm_assoc_req);
 	mlm_assoc_req = NULL;
@@ -4639,7 +4684,9 @@ static void lim_tx_mgmt_frame(tpAniSirGlobal mac_ctx,
 	struct sir_mgmt_msg *mb_msg, uint32_t msg_len,
 	void *packet, uint8_t *frame)
 {
+#ifdef WLAN_DEBUG
 	tpSirMacFrameCtl fc = (tpSirMacFrameCtl) mb_msg->data;
+#endif
 	QDF_STATUS qdf_status;
 	uint8_t sme_session_id = 0;
 	tpPESession session;
@@ -4683,17 +4730,23 @@ void lim_send_mgmt_frame_tx(tpAniSirGlobal mac_ctx,
 {
 	struct sir_mgmt_msg *mb_msg = (struct sir_mgmt_msg *)msg_buf;
 	uint32_t msg_len;
+#ifdef WLAN_DEBUG
 	tpSirMacFrameCtl fc = (tpSirMacFrameCtl) mb_msg->data;
+#endif
 	uint8_t sme_session_id;
 	QDF_STATUS qdf_status;
 	uint8_t *frame;
 	void *packet;
+	tpSirMacMgmtHdr mac_hdr;
 
 	msg_len = mb_msg->msg_len - sizeof(*mb_msg);
 	pe_debug("sending fc->type: %d fc->subType: %d",
 		fc->type, fc->subType);
 
 	sme_session_id = mb_msg->session_id;
+	mac_hdr = (tpSirMacMgmtHdr)mb_msg->data;
+
+	lim_add_mgmt_seq_num(mac_ctx, mac_hdr);
 
 	qdf_status = cds_packet_alloc((uint16_t) msg_len, (void **)&frame,
 				 (void **)&packet);

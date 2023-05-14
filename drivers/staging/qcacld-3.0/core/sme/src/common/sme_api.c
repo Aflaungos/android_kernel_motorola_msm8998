@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1675,6 +1675,7 @@ QDF_STATUS sme_hdd_ready_ind(tHalHandle hHal)
 		msg->csr_roam_synch_cb = csr_roam_synch_callback;
 		msg->sme_msg_cb = sme_process_msg_callback;
 		msg->stop_roaming_cb = sme_stop_roaming;
+		msg->csr_roam_pmkid_req_cb = csr_roam_pmkid_req_callback;
 
 		if (eSIR_FAILURE != u_mac_post_ctrl_msg(hHal, (tSirMbMsg *)
 							msg))
@@ -3373,7 +3374,8 @@ QDF_STATUS sme_scan_request(tHalHandle hal, uint8_t session_id,
 	msg.reserved = 0;
 	msg.bodyval = 0;
 	if (QDF_STATUS_SUCCESS !=
-		cds_mq_post_message(QDF_MODULE_ID_SME, &msg)) {
+	    cds_mq_post_message_by_priority(QDF_MODULE_ID_SME,
+					    &msg, HIGH_PRIORITY)) {
 		sme_err("sme_scan_req failed to post msg");
 		csr_scan_free_request(mac_ctx, scan_msg->scan_param);
 		qdf_mem_free(scan_msg->scan_param);
@@ -6106,6 +6108,7 @@ QDF_STATUS sme_oem_data_req(tHalHandle hal, struct oem_data_req *hdd_oem_req)
 	oem_data_req->data_len = hdd_oem_req->data_len;
 	oem_data_req->data = qdf_mem_malloc(oem_data_req->data_len);
 	if (!oem_data_req->data) {
+		qdf_mem_free(oem_data_req);
 		sme_err("mem alloc failed");
 		return QDF_STATUS_E_NOMEM;
 	}
@@ -7430,6 +7433,26 @@ uint8_t sme_get_concurrent_operation_channel(tHalHandle hHal)
 	return channel;
 }
 
+uint8_t sme_get_beaconing_concurrent_operation_channel(tHalHandle hal,
+						       uint8_t vdev_id_to_skip)
+{
+	QDF_STATUS status = QDF_STATUS_E_FAILURE;
+	tpAniSirGlobal mac = PMAC_STRUCT(hal);
+	uint8_t channel = 0;
+
+	status = sme_acquire_global_lock(&mac->sme);
+	if (QDF_IS_STATUS_SUCCESS(status)) {
+
+		channel = csr_get_beaconing_concurrent_channel(mac,
+							       vdev_id_to_skip);
+		sme_info("Other Concurrent Channel: %d skipped vdev_id %d",
+			 channel, vdev_id_to_skip);
+		sme_release_global_lock(&mac->sme);
+	}
+
+	return channel;
+}
+
 #ifdef FEATURE_WLAN_MCC_TO_SCC_SWITCH
 uint16_t sme_check_concurrent_channel_overlap(tHalHandle hHal, uint16_t sap_ch,
 					      eCsrPhyMode sapPhyMode,
@@ -7674,6 +7697,7 @@ QDF_STATUS sme_get_cfg_valid_channels(tHalHandle hHal, uint8_t *aValidChannels,
 	return status;
 }
 
+#ifdef WLAN_DEBUG
 static uint8_t *sme_hint_to_str(enum country_src src)
 {
 
@@ -7694,6 +7718,7 @@ static uint8_t *sme_hint_to_str(enum country_src src)
 		return "unknown";
 	}
 }
+#endif
 
 void sme_set_cc_src(tHalHandle hHal, enum country_src cc_src)
 {
@@ -8020,7 +8045,7 @@ QDF_STATUS sme_8023_multicast_list(tHalHandle hHal, uint8_t sessionId,
 	if (!CSR_IS_SESSION_VALID(pMac, sessionId) ||
 			(!csr_is_conn_state_infra(pMac, sessionId) &&
 			 !csr_is_ndi_started(pMac, sessionId))) {
-		QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
+		QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_DEBUG,
 			  "%s: Invalid session: %d", __func__, sessionId);
 		return QDF_STATUS_E_FAILURE;
 	}
@@ -9362,6 +9387,7 @@ QDF_STATUS sme_stop_roaming(tHalHandle hal, uint8_t session_id, uint8_t reason)
 	status = wma_post_ctrl_msg(mac_ctx, &wma_msg);
 	if (eSIR_SUCCESS != status) {
 		sme_err("Posting WMA_ROAM_SCAN_OFFLOAD_REQ failed");
+		qdf_mem_zero(req, sizeof(tSirRoamOffloadScanReq));
 		qdf_mem_free(req);
 		return QDF_STATUS_E_FAULT;
 	}
@@ -12601,6 +12627,7 @@ QDF_STATUS sme_notify_ht2040_mode(tHalHandle hHal, uint16_t staId,
 		break;
 
 	default:
+		qdf_mem_free(pHtOpMode);
 		QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
 			  "%s: Invalid OP mode", __func__);
 		return QDF_STATUS_E_FAILURE;
@@ -12794,7 +12821,7 @@ QDF_STATUS sme_send_rate_update_ind(tHalHandle hHal,
 {
 	tpAniSirGlobal pMac = PMAC_STRUCT(hHal);
 	QDF_STATUS status;
-	cds_msg_t msg;
+	cds_msg_t msg = {0};
 	tSirRateUpdateInd *rate_upd = qdf_mem_malloc(sizeof(tSirRateUpdateInd));
 
 	if (rate_upd == NULL) {
@@ -12813,25 +12840,26 @@ QDF_STATUS sme_send_rate_update_ind(tHalHandle hHal,
 			eHAL_TX_RATE_HT20 | eHAL_TX_RATE_SGI;
 
 	status = sme_acquire_global_lock(&pMac->sme);
-	if (QDF_STATUS_SUCCESS == status) {
-		msg.type = WMA_RATE_UPDATE_IND;
-		msg.bodyptr = rate_upd;
-		MTRACE(qdf_trace(QDF_MODULE_ID_SME, TRACE_CODE_SME_TX_WMA_MSG,
-				 NO_SESSION, msg.type));
-		if (!QDF_IS_STATUS_SUCCESS
-			    (cds_mq_post_message(QDF_MODULE_ID_WMA, &msg))) {
-			QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
-				  "%s: Not able to post WMA_SET_RMC_RATE_IND to WMA!",
-				  __func__);
-
-			sme_release_global_lock(&pMac->sme);
-			qdf_mem_free(rate_upd);
-			return QDF_STATUS_E_FAILURE;
-		}
-
-		sme_release_global_lock(&pMac->sme);
-		return QDF_STATUS_SUCCESS;
+	if (QDF_IS_STATUS_ERROR(status)) {
+		qdf_mem_free(rate_upd);
+		return status;
 	}
+
+	msg.type = WMA_RATE_UPDATE_IND;
+	msg.bodyptr = rate_upd;
+	MTRACE(qdf_trace(QDF_MODULE_ID_SME, TRACE_CODE_SME_TX_WMA_MSG,
+			 NO_SESSION, msg.type));
+
+	status = cds_mq_post_message(QDF_MODULE_ID_WMA, &msg);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
+			  "%s: Not able to post WMA_SET_RMC_RATE_IND to WMA!",
+			  __func__);
+		qdf_mem_free(rate_upd);
+		status =  QDF_STATUS_E_FAILURE;
+	}
+
+	sme_release_global_lock(&pMac->sme);
 
 	return status;
 }
@@ -13005,8 +13033,9 @@ QDF_STATUS sme_update_sta_inactivity_timeout(tHalHandle hal_handle,
 	inactivity_time->sta_inactivity_timeout =
 		sta_inactivity_timer->sta_inactivity_timeout;
 
-	wma_update_sta_inactivity_timeout(wma_handle,
-				inactivity_time);
+	wma_update_sta_inactivity_timeout(wma_handle, inactivity_time);
+	qdf_mem_free(inactivity_time);
+
 	return QDF_STATUS_SUCCESS;
 }
 
@@ -13227,10 +13256,14 @@ QDF_STATUS sme_set_miracast(tHalHandle hal, uint8_t filter_type)
 	uint32_t *val;
 	tpAniSirGlobal mac_ptr = PMAC_STRUCT(hal);
 
+	if (!mac_ptr) {
+		sme_err("Invalid pointer");
+		return QDF_STATUS_E_NOMEM;
+	}
+
 	val = qdf_mem_malloc(sizeof(*val));
-	if (NULL == val || NULL == mac_ptr) {
-		QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
-				"%s: Invalid pointer", __func__);
+	if (!val) {
+		sme_err("Mem allocation failed");
 		return QDF_STATUS_E_NOMEM;
 	}
 
@@ -13561,9 +13594,8 @@ QDF_STATUS sme_set_thermal_level(tHalHandle hal, uint8_t level)
  */
 QDF_STATUS sme_txpower_limit(tHalHandle hHal, tSirTxPowerLimit *psmetx)
 {
-	QDF_STATUS status = QDF_STATUS_SUCCESS;
-	QDF_STATUS qdf_status = QDF_STATUS_SUCCESS;
-	cds_msg_t cds_message;
+	QDF_STATUS status;
+	cds_msg_t cds_message = {0};
 	tpAniSirGlobal pMac = PMAC_STRUCT(hHal);
 	tSirTxPowerLimit *tx_power_limit;
 
@@ -13578,21 +13610,25 @@ QDF_STATUS sme_txpower_limit(tHalHandle hHal, tSirTxPowerLimit *psmetx)
 	*tx_power_limit = *psmetx;
 
 	status = sme_acquire_global_lock(&pMac->sme);
-	if (QDF_IS_STATUS_SUCCESS(status)) {
-		cds_message.type = WMA_TX_POWER_LIMIT;
-		cds_message.reserved = 0;
-		cds_message.bodyptr = tx_power_limit;
-
-		qdf_status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
-		if (!QDF_IS_STATUS_SUCCESS(qdf_status)) {
-			QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
-				  "%s: not able to post WMA_TX_POWER_LIMIT",
-				  __func__);
-			status = QDF_STATUS_E_FAILURE;
-			qdf_mem_free(tx_power_limit);
-		}
-		sme_release_global_lock(&pMac->sme);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		qdf_mem_free(tx_power_limit);
+		return status;
 	}
+
+	cds_message.type = WMA_TX_POWER_LIMIT;
+	cds_message.bodyptr = tx_power_limit;
+
+	status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
+			  "%s: not able to post WMA_TX_POWER_LIMIT",
+			  __func__);
+		status = QDF_STATUS_E_FAILURE;
+		qdf_mem_free(tx_power_limit);
+	}
+
+	sme_release_global_lock(&pMac->sme);
+
 	return status;
 }
 
@@ -13635,17 +13671,21 @@ QDF_STATUS sme_ap_disable_intra_bss_fwd(tHalHandle hHal, uint8_t sessionId,
 	pSapDisableIntraFwd->disableintrabssfwd = disablefwd;
 
 	status = sme_acquire_global_lock(&pMac->sme);
-	if (QDF_IS_STATUS_SUCCESS(status)) {
-		/* serialize the req through MC thread */
-		cds_message.bodyptr = pSapDisableIntraFwd;
-		cds_message.type = WMA_SET_SAP_INTRABSS_DIS;
-		qdf_status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
-		if (!QDF_IS_STATUS_SUCCESS(qdf_status)) {
-			status = QDF_STATUS_E_FAILURE;
-			qdf_mem_free(pSapDisableIntraFwd);
-		}
-		sme_release_global_lock(&pMac->sme);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		qdf_mem_free(pSapDisableIntraFwd);
+		return QDF_STATUS_E_FAILURE;
 	}
+
+	/* serialize the req through MC thread */
+	cds_message.bodyptr = pSapDisableIntraFwd;
+	cds_message.type = WMA_SET_SAP_INTRABSS_DIS;
+	qdf_status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		status = QDF_STATUS_E_FAILURE;
+		qdf_mem_free(pSapDisableIntraFwd);
+	}
+	sme_release_global_lock(&pMac->sme);
+
 	return status;
 }
 
@@ -13936,21 +13976,12 @@ QDF_STATUS sme_update_dsc_pto_up_mapping(tHalHandle hHal,
 	}
 	for (i = 0; i < SME_QOS_WMM_UP_MAX; i++) {
 		for (j = pSession->QosMapSet.dscp_range[i][0];
-			j <= pSession->QosMapSet.dscp_range[i][1];
-			j++) {
-			if ((pSession->QosMapSet.dscp_range[i][0] == 255)
-				&& (pSession->QosMapSet.dscp_range[i][1] ==
-							255)) {
-				QDF_TRACE(QDF_MODULE_ID_SME,
-					QDF_TRACE_LEVEL_DEBUG,
-					FL("User Priority %d isn't used"), i);
-				break;
-			}
+			j <= pSession->QosMapSet.dscp_range[i][1] &&
+			j <= WLAN_MAX_DSCP; j++)
 			dscpmapping[j] = i;
-		}
 	}
 	for (i = 0; i < pSession->QosMapSet.num_dscp_exceptions; i++)
-		if (pSession->QosMapSet.dscp_exceptions[i][0] != 255)
+		if (pSession->QosMapSet.dscp_exceptions[i][0] <= WLAN_MAX_DSCP)
 			dscpmapping[pSession->QosMapSet.dscp_exceptions[i][0]] =
 				pSession->QosMapSet.dscp_exceptions[i][1];
 
@@ -14291,12 +14322,17 @@ QDF_STATUS sme_set_wisa_params(tHalHandle hal,
 
 	*cds_msg_wisa_params = *wisa_params;
 	status = sme_acquire_global_lock(&mac->sme);
-	if (QDF_IS_STATUS_SUCCESS(status)) {
-		cds_message.bodyptr = cds_msg_wisa_params;
-		cds_message.type = WMA_SET_WISA_PARAMS;
-		status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
-		sme_release_global_lock(&mac->sme);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		qdf_mem_free(cds_msg_wisa_params);
+		return QDF_STATUS_E_FAILURE;
 	}
+	cds_message.bodyptr = cds_msg_wisa_params;
+	cds_message.type = WMA_SET_WISA_PARAMS;
+	status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
+	if (QDF_IS_STATUS_ERROR(status))
+		qdf_mem_free(cds_msg_wisa_params);
+
+	sme_release_global_lock(&mac->sme);
 	return status;
 }
 
@@ -18431,8 +18467,10 @@ send_flush_cmd:
 	    cds_mq_post_message(QDF_MODULE_ID_WMA, &msg)) {
 		sme_err("Not able to post message to WDA");
 
-		if (pmk_cache)
+		if (pmk_cache) {
+			qdf_mem_zero(pmk_cache, sizeof(*pmk_cache));
 			qdf_mem_free(pmk_cache);
+		}
 
 		return QDF_STATUS_E_FAILURE;
 	}
@@ -18665,18 +18703,23 @@ QDF_STATUS sme_get_chain_rssi(tHalHandle phal,
 	*req_msg = *input;
 
 	status = sme_acquire_global_lock(&pmac->sme);
-	if (QDF_STATUS_SUCCESS == status) {
-		/* serialize the req through MC thread */
-		cds_message.bodyptr = req_msg;
-		cds_message.type    = SIR_HAL_GET_CHAIN_RSSI_REQ;
-		cds_status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
-		if (!QDF_IS_STATUS_SUCCESS(cds_status)) {
-			QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
-				FL("Post Get Chain Rssi msg fail"));
-			status = QDF_STATUS_E_FAILURE;
-		}
-		sme_release_global_lock(&pmac->sme);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		qdf_mem_free(req_msg);
+		return QDF_STATUS_E_FAILURE;
 	}
+
+	/* serialize the req through MC thread */
+	cds_message.bodyptr = req_msg;
+	cds_message.type    = SIR_HAL_GET_CHAIN_RSSI_REQ;
+	cds_status = cds_mq_post_message(QDF_MODULE_ID_WMA, &cds_message);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
+			FL("Post Get Chain Rssi msg fail"));
+		qdf_mem_free(req_msg);
+		status = QDF_STATUS_E_FAILURE;
+	}
+	sme_release_global_lock(&pmac->sme);
+
 
 	return status;
 }
@@ -19331,79 +19374,23 @@ QDF_STATUS sme_fast_reassoc(tHalHandle hal, tCsrRoamProfile *profile,
 			    const tSirMacAddr bssid, int channel,
 			    uint8_t vdev_id, const tSirMacAddr connected_bssid)
 {
-	QDF_STATUS status;
-	struct wma_roam_invoke_cmd *fastreassoc;
-	cds_msg_t msg = {0};
+	QDF_STATUS status = QDF_STATUS_E_FAILURE;
 	tpAniSirGlobal mac_ctx = PMAC_STRUCT(hal);
-	tCsrRoamSession *session;
-	session = CSR_GET_SESSION(mac_ctx, vdev_id);
-	if (!session || !session->pCurRoamProfile) {
-		sme_err("session %d not found", vdev_id);
+
+	if (!mac_ctx)
 		return QDF_STATUS_E_FAILURE;
+
+	if (!CSR_IS_SESSION_VALID(mac_ctx, vdev_id)) {
+		sme_err("Invalid vdev_id: %d", vdev_id);
+		return QDF_STATUS_E_INVAL;
 	}
 
-	if (session->pCurRoamProfile->supplicant_disabled_roaming ||
-	    session->pCurRoamProfile->driver_disabled_roaming) {
-		sme_debug("roaming status in Supplicant %d and in driver %d",
-			session->pCurRoamProfile->supplicant_disabled_roaming,
-			session->pCurRoamProfile->driver_disabled_roaming);
+	if (QDF_IS_STATUS_ERROR(sme_acquire_global_lock(&mac_ctx->sme)))
 		return QDF_STATUS_E_FAILURE;
-	}
 
-	fastreassoc = qdf_mem_malloc(sizeof(*fastreassoc));
-	if (NULL == fastreassoc) {
-		sme_err("qdf_mem_malloc failed for fastreassoc");
-		return QDF_STATUS_E_NOMEM;
-	}
-	/* if both are same then set the flag */
-	if (!qdf_mem_cmp(connected_bssid, bssid, ETH_ALEN)) {
-		fastreassoc->is_same_bssid = true;
-		sme_debug("bssid same, bssid[%pM]", bssid);
-	}
-	fastreassoc->vdev_id = vdev_id;
-	fastreassoc->bssid[0] = bssid[0];
-	fastreassoc->bssid[1] = bssid[1];
-	fastreassoc->bssid[2] = bssid[2];
-	fastreassoc->bssid[3] = bssid[3];
-	fastreassoc->bssid[4] = bssid[4];
-	fastreassoc->bssid[5] = bssid[5];
-
-	status = sme_get_beacon_frm(hal, profile, bssid,
-				    &fastreassoc->frame_buf,
-				    &fastreassoc->frame_len,
-				    &channel);
-
-	if (!channel) {
-		sme_err("channel retrieval from BSS desc fails!");
-		qdf_mem_free(fastreassoc);
-		return QDF_STATUS_E_FAULT;
-	}
-
-	fastreassoc->channel = channel;
-	if (QDF_STATUS_SUCCESS != status) {
-		sme_warn("sme_get_beacon_frm failed");
-		fastreassoc->frame_buf = NULL;
-		fastreassoc->frame_len = 0;
-	}
-
-	if (csr_is_auth_type_ese(mac_ctx->roam.roamSession[vdev_id].
-				connectedProfile.AuthType)) {
-		sme_debug("Beacon is not required for ESE");
-		if (fastreassoc->frame_len) {
-			qdf_mem_free(fastreassoc->frame_buf);
-			fastreassoc->frame_buf = NULL;
-			fastreassoc->frame_len = 0;
-		}
-	}
-
-	msg.type = eWNI_SME_ROAM_INVOKE;
-	msg.reserved = 0;
-	msg.bodyptr = fastreassoc;
-	status = cds_mq_post_message(QDF_MODULE_ID_PE, &msg);
-	if (QDF_STATUS_SUCCESS != status) {
-		sme_err("Not able to post ROAM_INVOKE_CMD message to PE");
-		qdf_mem_free(fastreassoc);
-	}
+	status = csr_fast_reassoc(hal, profile, bssid, channel, vdev_id,
+				  connected_bssid);
+	sme_release_global_lock(&mac_ctx->sme);
 
 	return status;
 }
@@ -19502,8 +19489,10 @@ QDF_STATUS sme_send_mgmt_tx(tHalHandle hal, uint8_t session_id,
 }
 
 #ifdef WLAN_FEATURE_SAE
-QDF_STATUS sme_handle_sae_msg(tHalHandle hal, uint8_t session_id,
-		uint8_t sae_status)
+QDF_STATUS sme_handle_sae_msg(tHalHandle hal,
+			      uint8_t session_id,
+			      uint8_t sae_status,
+			      struct qdf_mac_addr peer_mac_addr)
 {
 	QDF_STATUS qdf_status = QDF_STATUS_SUCCESS;
 	tpAniSirGlobal mac = PMAC_STRUCT(hal);
@@ -19520,9 +19509,13 @@ QDF_STATUS sme_handle_sae_msg(tHalHandle hal, uint8_t session_id,
 			sae_msg->length = sizeof(*sae_msg);
 			sae_msg->session_id = session_id;
 			sae_msg->sae_status = sae_status;
-			sme_debug("SAE: sae_status %d session_id %d",
-				sae_msg->sae_status,
-				sae_msg->session_id);
+			qdf_mem_copy(sae_msg->peer_mac_addr,
+				     peer_mac_addr.bytes,
+				     MAC_ADDR_LEN);
+			sme_debug("SAE: sae_status %d session_id %d Peer: "
+				  MAC_ADDRESS_STR, sae_msg->sae_status,
+				  sae_msg->session_id,
+				  MAC_ADDR_ARRAY(sae_msg->peer_mac_addr));
 
 			qdf_status = cds_send_mb_message_to_mac(sae_msg);
 		}
