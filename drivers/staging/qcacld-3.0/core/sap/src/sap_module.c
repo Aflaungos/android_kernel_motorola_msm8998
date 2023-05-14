@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -908,9 +908,7 @@ QDF_STATUS wlansap_start_bss(void *pCtx,     /* pwextCtx */
 		pSapCtx->sessionId;
 	pmac->sap.SapDfsInfo.dfs_beacon_tx_enhanced =
 		pConfig->dfs_beacon_tx_enhanced;
-//BEGIN MOT a19110 IKSWO-8490 Comment out initialisation of
-//acl list. We use driver ioctl to set it
-#if 0
+
 	/* Copy MAC filtering settings to sap context */
 	pSapCtx->eSapMacAddrAclMode = pConfig->SapMacaddr_acl;
 	qdf_mem_copy(pSapCtx->acceptMacList, pConfig->accept_mac,
@@ -922,8 +920,6 @@ QDF_STATUS wlansap_start_bss(void *pCtx,     /* pwextCtx */
 	pSapCtx->nDenyMac = pConfig->num_deny_mac;
 	sap_sort_mac_list(pSapCtx->denyMacList, pSapCtx->nDenyMac);
 	pSapCtx->beacon_tx_rate = pConfig->beacon_tx_rate;
-#endif
-//END IKSWO-8490
 
 	/* Fill in the event structure for FSM */
 	sapEvent.event = eSAP_HDD_START_INFRA_BSS;
@@ -1305,7 +1301,15 @@ wlansap_modify_acl
 			  "%s: Invalid SAP Context", __func__);
 		return QDF_STATUS_E_FAULT;
 	}
-
+	if (qdf_mem_cmp(sap_ctx->bssid.bytes,
+	    peer_sta_mac, QDF_MAC_ADDR_SIZE) == 0) {
+		QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_ERROR,
+			  "requested peer mac is" MAC_ADDRESS_STR
+			  "our own SAP BSSID."
+			  "Do not blacklist or whitelist this BSSID",
+			  MAC_ADDR_ARRAY(peer_sta_mac));
+		return QDF_STATUS_E_FAULT;
+	}
 	QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_INFO_LOW,
 		  "Modify ACL entered\n" "Before modification of ACL\n"
 		  "size of accept and deny lists %d %d", sap_ctx->nAcceptMac,
@@ -1641,7 +1645,7 @@ static QDF_STATUS wlansap_update_csa_channel_params(ptSapContext sap_context,
 
 	mac_ctx = PMAC_STRUCT(hal);
 
-	if (channel <= CHAN_ENUM_13) {
+	if (channel <= CHAN_ENUM_14) {
 		/*
 		 * currently OBSS scan is done in hostapd, so to avoid
 		 * SAP coming up in HT40 on channel switch we are
@@ -3319,7 +3323,7 @@ void wlansap_extend_to_acs_range(uint8_t *startChannelNum,
 
 	if (*startChannelNum <= 14 && *endChannelNum <= 14) {
 		*bandStartChannel = CHAN_ENUM_1;
-		*bandEndChannel = CHAN_ENUM_13;
+		*bandEndChannel = CHAN_ENUM_14;
 		tmp_startChannelNum = *startChannelNum > 5 ?
 				   (*startChannelNum - ACS_2G_EXTEND) : 1;
 		tmp_endChannelNum = (*endChannelNum + ACS_2G_EXTEND) <= 14 ?
@@ -3847,3 +3851,168 @@ void wlansap_cleanup_cac_timer(void *sap_ctx)
 			FL("sapdfs, force cleanup running dfs cac timer"));
 	}
 }
+
+bool wlansap_check_sap_started(void *sap_ctx)
+{
+	ptSapContext psap_ctx = CDS_GET_SAP_CB(sap_ctx);
+
+	if (!psap_ctx) {
+		QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_ERROR,
+			  FL("Invalid SAP context"));
+		return false;
+	}
+
+	if (psap_ctx->sapsMachine == eSAP_STARTED)
+		return true;
+
+	return false;
+}
+
+QDF_STATUS wlansap_filter_ch_based_acs(void *cds_ctx,
+				       uint8_t *ch_list,
+				       uint32_t *ch_cnt)
+{
+	size_t ch_index;
+	uint32_t target_ch_cnt = 0;
+	ptSapContext sap_ctx;
+
+	sap_ctx = CDS_GET_SAP_CB(cds_ctx);
+
+	if (!sap_ctx || !ch_list || !ch_cnt || !sap_ctx->acs_cfg) {
+		QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_ERROR,
+			  "Null parameters");
+		return QDF_STATUS_E_FAULT;
+	}
+
+	for (ch_index = 0; ch_index < *ch_cnt; ch_index++) {
+		if (ch_list[ch_index] >= sap_ctx->acs_cfg->start_ch &&
+		    ch_list[ch_index] <= sap_ctx->acs_cfg->end_ch)
+			ch_list[target_ch_cnt++] = ch_list[ch_index];
+	}
+
+	*ch_cnt = target_ch_cnt;
+
+	return QDF_STATUS_SUCCESS;
+}
+
+#if defined(FEATURE_WLAN_CH_AVOID)
+/**
+ * wlansap_get_safe_channel() - Get safe channel from current regulatory
+ * @cds_ctx: sap context
+ *
+ * This function is used to get safe channel from current regulatory valid
+ * channels to restart SAP if failed to get safe channel from PCL.
+ *
+ * Return: Channel number to restart SAP in case of success. In case of any
+ * failure, the channel number returned is zero.
+ */
+static uint8_t
+wlansap_get_safe_channel(void *cds_ctx)
+{
+	struct sir_pcl_list pcl;
+	QDF_STATUS status;
+	ptSapContext sap_ctx;
+
+	sap_ctx = CDS_GET_SAP_CB(cds_ctx);
+
+	if (!sap_ctx) {
+		QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_ERROR,
+			  "Invalid sap_ctx %pK",
+			  sap_ctx);
+		return INVALID_CHANNEL_ID;
+	}
+
+	status = cds_get_valid_chans(pcl.pcl_list,
+				     &pcl.pcl_len);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_ERROR,
+			  "error %d in getting valid channel list", status);
+		return INVALID_CHANNEL_ID;
+	}
+
+	status = wlansap_filter_ch_based_acs(cds_ctx,
+					     pcl.pcl_list,
+					     &pcl.pcl_len);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_ERROR,
+			  "failed to filter ch from acs %d", status);
+		return INVALID_CHANNEL_ID;
+	}
+
+	if (pcl.pcl_len) {
+		status = cds_get_valid_chans_from_range(pcl.pcl_list,
+							&pcl.pcl_len,
+							CDS_SAP_MODE);
+		if (QDF_IS_STATUS_ERROR(status)) {
+			QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_ERROR,
+				  "failed to get valid channel: %d", status);
+			return INVALID_CHANNEL_ID;
+		}
+
+		if (pcl.pcl_len) {
+			QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_DEBUG,
+				  "select %d from valid channel list",
+				  pcl.pcl_list[0]);
+			return pcl.pcl_list[0];
+		}
+	}
+
+	return INVALID_CHANNEL_ID;
+}
+
+uint8_t wlansap_get_safe_channel_from_pcl_and_acs_range(void *cds_ctx)
+{
+	struct sir_pcl_list pcl;
+	QDF_STATUS status;
+	ptSapContext sap_ctx;
+
+	sap_ctx = CDS_GET_SAP_CB(cds_ctx);
+
+	if (!sap_ctx) {
+		QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_ERROR,
+			  "Invalid sap_ctx %pK",
+			  sap_ctx);
+		return INVALID_CHANNEL_ID;
+	}
+
+	status = cds_get_pcl_for_existing_conn(
+			CDS_SAP_MODE, pcl.pcl_list, &pcl.pcl_len,
+			pcl.weight_list, QDF_ARRAY_SIZE(pcl.weight_list),
+			false);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_ERROR,
+			  "Get PCL failed");
+		return INVALID_CHANNEL_ID;
+	}
+
+	if (pcl.pcl_len) {
+		status = wlansap_filter_ch_based_acs(cds_ctx,
+						     pcl.pcl_list,
+						     &pcl.pcl_len);
+		if (QDF_IS_STATUS_ERROR(status)) {
+			QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_ERROR,
+				  "failed to filter ch from acs %d", status);
+			return INVALID_CHANNEL_ID;
+		}
+
+		if (pcl.pcl_len) {
+			QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_DEBUG,
+				  "select %d from valid channel list",
+				  pcl.pcl_list[0]);
+			return pcl.pcl_list[0];
+		}
+		QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_DEBUG,
+			  "no safe channel from PCL found in ACS range");
+	} else {
+		QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_DEBUG,
+			  "pcl length is zero!");
+	}
+
+	/*
+	 * In some scenarios, like hw dbs disabled, sap+sap case, if operating
+	 * channel is unsafe channel, the pcl may be empty, instead of return,
+	 * try to choose a safe channel from acs range.
+	 */
+	return wlansap_get_safe_channel(cds_ctx);
+}
+#endif

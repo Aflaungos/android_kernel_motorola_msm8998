@@ -684,6 +684,9 @@ int __secure_computing(const struct seccomp_data *sd)
 	int mode = current->seccomp.mode;
 	int this_syscall;
 
+	this_syscall = sd ? sd->nr :
+		syscall_get_nr(current, task_pt_regs(current));
+
 	if (config_enabled(CONFIG_CHECKPOINT_RESTORE) &&
 	    unlikely(current->ptrace & PT_SUSPEND_SECCOMP))
 		return 0;

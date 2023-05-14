@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2019 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -285,6 +285,28 @@ typedef enum {
 	WMI_HOST_MODE_MAX	= 16
 } WMI_HOST_WLAN_PHY_MODE;
 
+/**
+ * enum wmi_host_channel_width: Channel operating width. Maps to
+ *               wmi_channel_width used in firmware header file(s).
+ * @WMI_HOST_CHAN_WIDTH_20: 20 MHz channel operating width
+ * @WMI_HOST_CHAN_WIDTH_40: 40 MHz channel operating width
+ * @WMI_HOST_CHAN_WIDTH_80: 80 MHz channel operating width
+ * @WMI_HOST_CHAN_WIDTH_160: 160 MHz channel operating width
+ * @WMI_HOST_CHAN_WIDTH_80P80: 80+80 MHz channel operating width
+ * @WMI_HOST_CHAN_WIDTH_5: 5 MHz channel operating width
+ * @WMI_HOST_CHAN_WIDTH_10: 10 MHz channel operating width
+ * @WMI_HOST_CHAN_WIDTH_165: 165 MHz channel operating width
+ */
+typedef enum {
+	WMI_HOST_CHAN_WIDTH_20    = 0,
+	WMI_HOST_CHAN_WIDTH_40    = 1,
+	WMI_HOST_CHAN_WIDTH_80    = 2,
+	WMI_HOST_CHAN_WIDTH_160   = 3,
+	WMI_HOST_CHAN_WIDTH_80P80 = 4,
+	WMI_HOST_CHAN_WIDTH_5     = 5,
+	WMI_HOST_CHAN_WIDTH_10    = 6,
+	WMI_HOST_CHAN_WIDTH_165   = 7,
+} wmi_host_channel_width;
 
 /**
  * enum wmi_dwelltime_adaptive_mode: dwelltime_mode
@@ -1126,6 +1148,7 @@ struct scan_stop_params {
 /**
  * struct scan_chan_list_params  - scan channel list cmd parameter
  * @num_scan_chans: no of scan channels
+ * @max_bw_support_present: max BW support present
  * @chan_info: pointer to wmi channel info
  */
 #ifdef CONFIG_MCL
@@ -1149,6 +1172,7 @@ typedef struct {
 
 struct scan_chan_list_params {
 	uint8_t num_scan_chans;
+	bool max_bw_support_present;
 	wmi_channel_param *chan_info;
 };
 #else
@@ -2881,6 +2905,7 @@ struct ll_stats_get_params {
  * @sta_id: Per STA stats request must contain valid
  * @stats_mask: categories of stats requested
  * @session_id: wsm ts spec flag
+ * @pdev_id: PDEV id
  */
 struct pe_stats_req {
 	/* Common for all types are requests */
@@ -2890,6 +2915,7 @@ struct pe_stats_req {
 	/* categories of stats requested. look at ePEStatsMask */
 	uint32_t stats_mask;
 	uint8_t session_id;
+	uint8_t pdev_id;
 };
 
 /**
@@ -3962,12 +3988,14 @@ typedef struct {
  * @enable: Enable/Disable Thermal mitigation
  * @dc: DC
  * @dc_per_event: DC per event
+ * @num_thermal_conf: Number of thermal configurations to be sent
  * @tt_level_config: TT level config params
  */
 struct thermal_mitigation_params {
 	uint32_t enable;
 	uint32_t dc;
 	uint32_t dc_per_event;
+	uint8_t num_thermal_conf;
 	tt_level_config levelconf[THERMAL_LEVELS];
 };
 
@@ -5309,6 +5337,7 @@ typedef enum {
 	wmi_sar_get_limits_event_id,
 	wmi_roam_scan_stats_event_id,
 	wmi_wlan_sar2_result_event_id,
+	wmi_roam_pmkid_request_event_id,
 	wmi_events_max,
 } wmi_conv_event_id;
 
@@ -7420,9 +7449,10 @@ struct action_wakeup_set_param {
  * @WMI_ACTION_OUI_ITO_EXTENSION: for extending inactivity time of station
  * @WMI_ACTION_OUI_CCKM_1X1: for TX with CCKM 1x1 only
  * @WMI_ACTION_OUI_ITO_ALTERNATE: for alternate inactivity time of station
- * WMI_ACTION_OUI_SWITCH_TO_11N_MODE: for switching to 11n mode connection
- * WMI_ACTION_OUI_CONNECT_1x1_WITH_1_CHAIN: for 1x1 connection with 1 Chain
- * @WMI_ACTION_OUI_MAXIMUM_ID: maximun number of action oui types
+ * @WMI_ACTION_OUI_SWITCH_TO_11N_MODE: for switching to 11n mode connection
+ * @WMI_ACTION_OUI_CONNECT_1x1_WITH_1_CHAIN: for 1x1 connection with 1 Chain
+ * @WMI_ACTION_OUI_DISABLE_AGGRESSIVE_EDCA: disable aggressive EDCA with the ap
+ * @WMI_ACTION_OUI_MAXIMUM_ID: maximum number of action oui types
  */
 enum wmi_action_oui_id {
 	WMI_ACTION_OUI_CONNECT_1X1 = 0,
@@ -7431,7 +7461,8 @@ enum wmi_action_oui_id {
 	WMI_ACTION_OUI_ITO_ALTERNATE = 3,
 	WMI_ACTION_OUI_SWITCH_TO_11N_MODE = 4,
 	WMI_ACTION_OUI_CONNECT_1x1_WITH_1_CHAIN = 5,
-	WMI_ACTION_OUI_MAXIMUM_ID = 6,
+	WMI_ACTION_OUI_DISABLE_AGGRESSIVE_EDCA = 6,
+	WMI_ACTION_OUI_MAXIMUM_ID = 7,
 };
 
 /**
@@ -7596,6 +7627,23 @@ struct wmi_mawc_roam_params {
 	uint32_t best_ap_rssi_threshold;
 	uint8_t rssi_stationary_high_adjust;
 	uint8_t rssi_stationary_low_adjust;
+};
+/**
+ * struct wmi_btm_config - BSS Transition Management offload params
+ * @vdev_id: VDEV on which the parameters should be applied
+ * @btm_offload_config: BTM config
+ * @btm_solicited_timeout: Timeout value for waiting BTM request
+ * @btm_max_attempt_cnt: Maximum attempt for sending BTM query to ESS
+ * @btm_sticky_time: Stick time after roaming to new AP by BTM
+ * @btm_query_bitmask: roam trigger reasons to trigger BTM Query
+ */
+struct wmi_btm_config {
+	uint8_t vdev_id;
+	uint32_t btm_offload_config;
+	uint32_t btm_solicited_timeout;
+	uint32_t btm_max_attempt_cnt;
+	uint32_t btm_sticky_time;
+	uint32_t btm_query_bitmask;
 };
 
 /**

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2019, 2021 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1438,8 +1438,10 @@ lim_update_short_preamble(tpAniSirGlobal mac_ctx, tSirMacAddr peer_mac_addr,
 	}
 
 	if (i >= LIM_PROT_STA_CACHE_SIZE) {
+#ifdef WLAN_DEBUG
 		tLimNoShortParams *lim_params =
 				&psession_entry->gLimNoShortParams;
+#endif
 		if (LIM_IS_AP_ROLE(psession_entry)) {
 			pe_err("No space in Short cache active: %d sta: %d for sta",
 				i, lim_params->numNonShortPreambleSta);
@@ -6550,7 +6552,7 @@ tSirRetStatus lim_strip_ie(tpAniSirGlobal mac_ctx,
 	int left = *addn_ielen;
 	uint8_t *ptr = addn_ie;
 	uint8_t elem_id;
-	uint16_t elem_len;
+	uint16_t elem_len, ie_len, extracted_ie_len = 0;
 
 	if (NULL == addn_ie) {
 		pe_err("NULL addn_ie pointer");
@@ -6562,6 +6564,10 @@ tSirRetStatus lim_strip_ie(tpAniSirGlobal mac_ctx,
 		pe_err("Unable to allocate memory");
 		return eSIR_MEM_ALLOC_FAILED;
 	}
+
+	if (extracted_ie)
+		qdf_mem_set(extracted_ie, eid_max_len + size_of_len_field + 1,
+			    0);
 
 	while (left >= 2) {
 		elem_id  = ptr[0];
@@ -6593,12 +6599,13 @@ tSirRetStatus lim_strip_ie(tpAniSirGlobal mac_ctx,
 			 * take oui IE and store in provided buffer.
 			 */
 			if (NULL != extracted_ie) {
-				qdf_mem_set(extracted_ie,
-					    eid_max_len + size_of_len_field + 1,
-					    0);
-				if (elem_len <= eid_max_len)
-					qdf_mem_copy(extracted_ie, &ptr[0],
-					elem_len + size_of_len_field + 1);
+				ie_len = elem_len + size_of_len_field + 1;
+				if (ie_len <= eid_max_len - extracted_ie_len) {
+					qdf_mem_copy(
+					extracted_ie + extracted_ie_len,
+					&ptr[0], ie_len);
+					extracted_ie_len += ie_len;
+				}
 			}
 		}
 		left -= elem_len;
@@ -7335,8 +7342,7 @@ lim_assoc_rej_rem_entry_with_lowest_delta(qdf_list_t *list)
 }
 
 void lim_assoc_rej_add_to_rssi_based_reject_list(tpAniSirGlobal mac_ctx,
-	tDot11fTLVrssi_assoc_rej  *rssi_assoc_rej,
-	tSirMacAddr bssid, int8_t rssi)
+	struct sir_rssi_disallow_lst *ap_info)
 {
 	struct sir_rssi_disallow_lst *entry;
 	QDF_STATUS status = QDF_STATUS_SUCCESS;
@@ -7347,16 +7353,13 @@ void lim_assoc_rej_add_to_rssi_based_reject_list(tpAniSirGlobal mac_ctx,
 		return;
 	}
 
-	pe_debug("%pM: assoc resp rssi %d, delta rssi %d retry delay %d sec and list size %d",
-		bssid, rssi, rssi_assoc_rej->delta_rssi,
-		rssi_assoc_rej->retry_delay,
+	pe_debug("%pM: assoc resp, expected rssi %d retry delay %d sec and list size %d",
+		ap_info->bssid.bytes, ap_info->expected_rssi,
+		ap_info->retry_delay,
 		qdf_list_size(&mac_ctx->roam.rssi_disallow_bssid));
 
-	qdf_mem_copy(entry->bssid.bytes,
-		bssid, QDF_MAC_ADDR_SIZE);
-	entry->retry_delay = rssi_assoc_rej->retry_delay *
-		QDF_MC_TIMER_TO_MS_UNIT;
-	entry->expected_rssi = rssi + rssi_assoc_rej->delta_rssi;
+	*entry = *ap_info;
+
 	entry->time_during_rejection =
 		qdf_do_div(qdf_get_monotonic_boottime(),
 		QDF_MC_TIMER_TO_MS_UNIT);

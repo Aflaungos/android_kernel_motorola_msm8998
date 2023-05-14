@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2019 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -197,6 +197,8 @@ tSirRetStatus lim_send_switch_chnl_params(tpAniSirGlobal pMac,
 	pChnlParams->reduced_beacon_interval =
 		pMac->sap.SapDfsInfo.reduced_beacon_interval;
 
+	pChnlParams->ssid_hidden = pSessionEntry->ssidHidden;
+	pChnlParams->ssid = pSessionEntry->ssId;
 	if (cds_is_5_mhz_enabled())
 		pChnlParams->ch_width = CH_WIDTH_5MHZ;
 	else if (cds_is_10_mhz_enabled())
@@ -821,7 +823,7 @@ tSirRetStatus lim_send_ht40_obss_scanind(tpAniSirGlobal mac_ctx,
 	for (count = 0; count < channelnum &&
 		(channel24gnum < SIR_ROAM_MAX_CHANNELS); count++) {
 		if ((chan_list[count] > CHAN_ENUM_1) &&
-			(chan_list[count] < CHAN_ENUM_13)) {
+			(chan_list[count] < CHAN_ENUM_14)) {
 			ht40_obss_scanind->channels[channel24gnum] =
 				chan_list[count];
 			channel24gnum++;

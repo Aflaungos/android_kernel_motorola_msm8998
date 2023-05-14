@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2019 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -37,6 +37,8 @@
 #define CDS_CHANNEL_FREQ(chan_enum) chan_mapping[chan_enum].center_freq
 #define CDS_IS_DFS_CH(chan_num) (cds_get_channel_state((chan_num)) == \
 				CHANNEL_STATE_DFS)
+#define CDS_IS_DISABLE_CH(chan_num) (cds_get_channel_state((chan_num)) == \
+				     CHANNEL_STATE_DISABLE)
 
 #define CDS_IS_PASSIVE_OR_DISABLE_CH(chan_num) \
 	(cds_get_channel_state(chan_num) != CHANNEL_STATE_ENABLE)
@@ -140,6 +142,7 @@ enum channel_enum {
 	CHAN_ENUM_11,
 	CHAN_ENUM_12,
 	CHAN_ENUM_13,
+	CHAN_ENUM_14,
 
 	CHAN_ENUM_36,
 	CHAN_ENUM_40,
@@ -189,7 +192,7 @@ enum channel_enum {
 	NUM_CHANNELS,
 
 	MIN_24GHZ_CHANNEL = CHAN_ENUM_1,
-	MAX_24GHZ_CHANNEL = CHAN_ENUM_13,
+	MAX_24GHZ_CHANNEL = CHAN_ENUM_14,
 	NUM_24GHZ_CHANNELS = (MAX_24GHZ_CHANNEL - MIN_24GHZ_CHANNEL + 1),
 
 	MIN_5GHZ_CHANNEL = CHAN_ENUM_36,
