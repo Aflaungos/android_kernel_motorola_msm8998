@@ -36,7 +36,8 @@ jobs:
         if: env.NEED_UPDATE == 'true'
         run: |
           cd $GITHUB_WORKSPACE/kernel-source/KernelSU
-          git pull origin main
+          git fetch origin main
+          git reset --hard origin/main
 
       - name: Update current version
         if: env.NEED_UPDATE == 'true'
