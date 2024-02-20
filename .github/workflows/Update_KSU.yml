@@ -1,0 +1,51 @@
+name: Update KernelSU for Evert
+on:
+  workflow_call:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 12 * * *"
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Compare versions
+        run: |
+          local_commit=$(echo $(git submodule status --recursive | awk '{print $1}'))
+          latest_commit=$(curl -s https://github.com/tiann/KernelSU/commits/main | grep 'data-pjax="true"' | head -n 1 | awk -F'/' '{print $7}')
+
+          if [ "$local_commit" = "$latest_commit" ]; then
+            echo "::set-output name=need_update::false"
+          else
+            echo "::set-output name=need_update::true"
+          fi
+
+      - name: Update KernelSU
+        if: steps.compare_versions.outputs.need_update == 'true'
+        run: |
+          cd kernelsu
+          git pull origin main
+
+      - name: Update current version
+        if: steps.compare_versions.outputs.need_update == 'true'
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add .
+          git commit -m "New KernelSU Update! ${{ latest_commit }}"
+          git tag "KernelSU version ${{ latest_commit }}"
+
+      - name: Push changes to repo
+        if: steps.compare_versions.outputs.need_update == 'true'
+        uses: ad-m/github-push-action@master
+        with:
+          tags: true
+          github_token: ${{ secrets.TOKEN }}
