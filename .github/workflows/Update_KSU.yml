@@ -47,13 +47,7 @@ jobs:
           git config --local user.name "github-actions[bot]"
           git add .
           git commit -m "New KernelSU Update! $latest_commit"
-
-      - name: Push changes to repo
-        if: env.NEED_UPDATE == 'true'
-        uses: ad-m/github-push-action@master
-        with:
-          github_token: ${{ secrets.TOKEN }}
-          branch: ${{ github.ref }}
+          git push origin Retrofit-A13-BoostKernel
 
       - name: Delete workflow runs
         uses: Mattraks/delete-workflow-runs@v2
