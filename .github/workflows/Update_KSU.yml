@@ -19,23 +19,23 @@ jobs:
 
       - name: Compare versions
         run: |
-          local_commit=$(echo $(git submodule status --recursive | awk '{print $1}'))
+          local_commit=$(git submodule status --recursive | awk '{print $1}')
           latest_commit=$(curl -s https://github.com/tiann/KernelSU/commits/main | grep 'data-pjax="true"' | head -n 1 | awk -F'/' '{print $7}')
 
           if [ "$local_commit" = "$latest_commit" ]; then
-            echo "::set-output name=need_update::false"
+            echo "NEED_UPDATE=false" >> $GITHUB_ENV
           else
-            echo "::set-output name=need_update::true"
+            echo "NEED_UPDATE=true" >> $GITHUB_ENV
           fi
           
       - name: Update KernelSU
-        if: steps.compare_versions.outputs.need_update == 'true'
+        if: env.NEED_UPDATE == 'true'
         run: |
           cd kernelsu
           git pull origin main
 
       - name: Update current version
-        if: steps.compare_versions.outputs.need_update == 'true'
+        if: env.NEED_UPDATE == 'true'
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
@@ -44,7 +44,7 @@ jobs:
           git tag "KernelSU version $latest_commit"
 
       - name: Push changes to repo
-        if: steps.compare_versions.outputs.need_update == 'true'
+        if: env.NEED_UPDATE == 'true'
         uses: ad-m/github-push-action@master
         with:
           tags: true
