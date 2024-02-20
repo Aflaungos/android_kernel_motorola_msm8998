@@ -27,7 +27,8 @@ jobs:
           else
             echo "::set-output name=need_update::true"
           fi
-
+          echo "::set-output name=latest_commit::$latest_commit"
+          
       - name: Update KernelSU
         if: steps.compare_versions.outputs.need_update == 'true'
         run: |
