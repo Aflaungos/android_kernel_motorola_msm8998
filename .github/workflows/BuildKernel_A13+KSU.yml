@@ -46,7 +46,7 @@ jobs:
         with:
           submodules: true
           repository: Aflaungos/android_kernel_motorola_msm8998
-          ref: Retrofit-A13-BoostKernel
+          ref: lineage-20-BoostKernel
           path: kernel-source
           
       - name: Checkout Anykernel
