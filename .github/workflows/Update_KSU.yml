@@ -42,6 +42,7 @@ jobs:
       - name: Update current version
         if: env.NEED_UPDATE == 'true'
         run: |
+          cd $GITHUB_WORKSPACE/kernel-source/
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
           git add .
