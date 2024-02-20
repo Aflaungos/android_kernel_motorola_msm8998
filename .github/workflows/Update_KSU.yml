@@ -22,6 +22,7 @@ jobs:
 
       - name: Compare versions
         run: |
+          cd $GITHUB_WORKSPACE/kernel-source/
           local_commit=$(git submodule status --recursive | awk '{print $1}')
           latest_commit=$(curl -s https://github.com/tiann/KernelSU/commits/main | grep 'data-pjax="true"' | head -n 1 | awk -F'/' '{print $7}')
 
@@ -34,7 +35,7 @@ jobs:
       - name: Update KernelSU
         if: env.NEED_UPDATE == 'true'
         run: |
-          cd $GITHUB_WOKRSPACE/kernel-source/KernelSU
+          cd $GITHUB_WORKSPACE/kernel-source/KernelSU
           git pull origin main
 
       - name: Update current version
