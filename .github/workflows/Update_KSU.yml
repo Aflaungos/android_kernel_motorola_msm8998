@@ -47,7 +47,6 @@ jobs:
           git config --local user.name "github-actions[bot]"
           git add .
           git commit -m "New KernelSU Update! $latest_commit"
-          git tag "KernelSU version $latest_commit"
 
       - name: Push changes to repo
         if: env.NEED_UPDATE == 'true'
