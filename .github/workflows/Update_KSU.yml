@@ -31,7 +31,7 @@ jobs:
       - name: Update KernelSU
         if: env.NEED_UPDATE == 'true'
         run: |
-          cd kernelsu
+          cd $GITHUB_WOKRSPACE/kernelsu
           git pull origin main
 
       - name: Update current version
@@ -49,3 +49,9 @@ jobs:
         with:
           tags: true
           github_token: ${{ secrets.TOKEN }}
+
+      - name: Delete workflow runs
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          retain_days: 0
+          keep_minimum_runs: 2
