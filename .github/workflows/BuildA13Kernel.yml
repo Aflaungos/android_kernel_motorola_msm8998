@@ -1,17 +1,18 @@
-name: Build A13 Kernel
+name: Build Android Kernel 13 with KernelSU
 on:
-  push:
-    branches: ["Retrofit-A13-BoostKernel"]
-  workflow_dispatch:
-
+  workflow_call:
 jobs:
   build:
     strategy:
       matrix:
         device: [evert]
         
-    name: Build Kernel
+    name: Build KernelSU-${{ matrix.device }}
     runs-on: ubuntu-latest
+    env:
+      CCACHE_COMPILERCHECK: "%compiler% -dumpmachine; %compiler% -dumpversion"
+      CCACHE_NOHASHDIR: "true"
+      CCACHE_HARDLINK: "true"
     
     steps:
       - name: Installing Dependencies
@@ -33,9 +34,9 @@ jobs:
       - name: Download Build Tools
         if: steps.cache-aosp-clang.outputs.cache-hit != 'true'
         run: |
-          git clone https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 --depth=1 -b android-13.0.0_r0.130 linux-x86
-          git clone https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 -b android-13.0.0_r0.130 --depth=1 aarch64-linux-android-4.9
-          git clone https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 -b android-13.0.0_r0.130 --depth=1 arm-linux-androideabi-4.9
+          git clone https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 --depth=1 --single-branch --no-tags -b master aosp-clang/clang
+          git clone https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 -b android-13.0.0_r0.13 --depth=1 --single-branch --no-tags aosp-clang/aarch64-linux-android-4.9
+          git clone https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 -b android-13.0.0_r0.13 --depth=1 --single-branch --no-tags aosp-clang/arm-linux-androideabi-4.9
       
       - name: Setup kernel source
         uses: actions/checkout@v3
@@ -52,17 +53,13 @@ jobs:
           repository: Aflaungos/AnyKernel3
           ref: Evert
           path: anykernel     
-      
-       #- name: Setup KernelSU
-       #  working-directory: kernel-source
-       #  run: |
-       #     git config --global user.email "vimavick@gmail.com"
-       #     git config --global user.name "mrsiri"
-       #     curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
-       #    
-       #     cd KernelSU
-       #     echo "KSU_VERSION=$(($(git rev-list --count HEAD) + 10200))" >> $GITHUB_ENV
-       #     cd -
+          
+      - name: Setup Ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: Build-KernelSU-${{ matrix.device }}
+          save: ${{ github.event_name != 'pull_request' }}
+          max-size: 2G
           
       - name: Build Kernel
         working-directory: kernel-source
@@ -82,18 +79,18 @@ jobs:
           echo "date=$date" >> $GITHUB_ENV
           echo "Building kernel with $args"  
           make O=out LLVM=1 LLVM_IAS=1 CC="ccache clang" lineageos_${{ matrix.device }}_defconfig && make O=out LLVM=1 LLVM_IAS=1 CC="ccache clang" -j$(grep -c ^processor /proc/cpuinfo)
-
-      - name: Upload Kernel
+          
+      - name: Upload BoostKernel-${{ matrix.device }}
         uses: actions/upload-artifact@v3
         with:
-          name: Kernel-${{ matrix.device }}
+          name: BoostKernel-${{ matrix.device }}
           path: kernel-source/out/arch/arm64/boot/*
           
       - name: Prepare Anykernel
         working-directory: anykernel
         run: |
-          cp -f $GITHUB_WORKSPACE/kernel-source/out/arch/arm64/boot/Image-dtb .
-          ZIP_NAME="BoostKernel-${{ matrix.device }}-${{ env.date }}"
+          cp -f $GITHUB_WORKSPACE/kernel-source/out/arch/arm64/boot/Image.gz-dtb .
+          ZIP_NAME="BoostKernel-KernelSU-${{ matrix.device }}"
           echo "ZIP_NAME=$ZIP_NAME" >> $GITHUB_ENV
           zip -r "$ZIP_NAME.zip" *
           mv "$ZIP_NAME.zip" $GITHUB_WORKSPACE
@@ -106,16 +103,15 @@ jobs:
           
       - name: Creating Config Info
         run: |
-          echo "Device: Moto G6 Plus (evert)"
-          Build Date: $(date +%d%m%Y)
-          Only For Retrofit Based Roms (Pixel Experience/ Crdroid)
+          Build Code: $(date +%Y%m%d)-${{ github.run_number }}
+          Only For Retrofit Roms (PixelExperience and Crdroid)
           " >> INFO.txt
       
       - name: Release
         if: success()
         uses: softprops/action-gh-release@v1
         with:
-          name: "BoostKernel Android 13 For Moto G6 Plus (evert)"
+          name: "KernelSU For ${{ matrix.device }}"
           body_path: "INFO.txt"
           files: |
             kernel-source/out/arch/arm64/boot/*
