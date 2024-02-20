@@ -52,8 +52,8 @@ jobs:
         if: env.NEED_UPDATE == 'true'
         uses: ad-m/github-push-action@master
         with:
-          tags: true
           github_token: ${{ secrets.TOKEN }}
+          branch: ${{ github.ref }}
 
       - name: Delete workflow runs
         uses: Mattraks/delete-workflow-runs@v2
