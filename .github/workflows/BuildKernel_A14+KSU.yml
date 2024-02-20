@@ -104,6 +104,7 @@ jobs:
       - name: Creating Config Info
         run: |
           echo "Device: Moto G6 Plus (evert)
+          Build Code: $(date +%Y%m%d)-${{ github.run_number }}
           " >> INFO.txt
       
       - name: Release
