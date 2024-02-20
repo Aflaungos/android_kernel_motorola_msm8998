@@ -12,10 +12,13 @@ jobs:
       fail-fast: false
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+      - name: Setup kernel source
+        uses: actions/checkout@v3
         with:
           submodules: true
+          repository: Aflaungos/android_kernel_motorola_msm8998
+          ref: Retrofit-A13-BoostKernel
+          path: kernel-source
 
       - name: Compare versions
         run: |
@@ -31,7 +34,7 @@ jobs:
       - name: Update KernelSU
         if: env.NEED_UPDATE == 'true'
         run: |
-          cd $GITHUB_WOKRSPACE/kernelsu
+          cd $GITHUB_WOKRSPACE/kernel-source/KernelSU
           git pull origin main
 
       - name: Update current version
