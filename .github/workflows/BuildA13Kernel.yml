@@ -1,4 +1,4 @@
-name: Build Android Kernel 13 with KernelSU
+name: Build Android Kernel 13 with KernelSU (Retrofit)
 on:
   workflow_call:
 jobs:
@@ -103,6 +103,7 @@ jobs:
           
       - name: Creating Config Info
         run: |
+          echo "Device: Moto G6 Plus (evert)
           Build Code: $(date +%Y%m%d)-${{ github.run_number }}
           Only For Retrofit Roms (PixelExperience and Crdroid)
           " >> INFO.txt
