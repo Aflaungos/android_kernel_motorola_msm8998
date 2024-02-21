@@ -1,0 +1,127 @@
+name: Build Android Kernel 14 with KernelSU (Retrofit)
+on:
+  workflow_call:
+  schedule:
+    - cron: "0 12 * * *"
+jobs:
+  build:
+    strategy:
+      matrix:
+        device: [evert]
+        
+    name: Build KernelSU-${{ matrix.device }}
+    runs-on: ubuntu-latest
+    env:
+      CCACHE_COMPILERCHECK: "%compiler% -dumpmachine; %compiler% -dumpversion"
+      CCACHE_NOHASHDIR: "true"
+      CCACHE_HARDLINK: "true"
+    
+    steps:
+      - name: Installing Dependencies
+        run: |
+          sudo apt update -y
+          sudo apt-get install -y lld binutils clang llvm zip flex bison libncurses-dev gawk  libiberty-dev autoconf kmod bc build-essential gcc libc6 curl libstdc++6 git wget libssl-dev cpio p7zip-full ccache
+          sudo apt clean
+          
+      - name: Checkout
+        uses: actions/checkout@v3
+        
+      - name: Cache Build Tools
+        id: cache-aosp-clang
+        uses: actions/cache@v3
+        with:
+          path: aosp-clang
+          key: aosp-clang  
+        
+      - name: Download Build Tools
+        if: steps.cache-aosp-clang.outputs.cache-hit != 'true'
+        run: |
+          git clone https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 --depth=1 --single-branch --no-tags -b master aosp-clang/clang
+          git clone https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 -b android-13.0.0_r0.13 --depth=1 --single-branch --no-tags aosp-clang/aarch64-linux-android-4.9
+          git clone https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 -b android-13.0.0_r0.13 --depth=1 --single-branch --no-tags aosp-clang/arm-linux-androideabi-4.9
+      
+      - name: Setup kernel source
+        uses: actions/checkout@v3
+        with:
+          submodules: true
+          repository: Aflaungos/android_kernel_motorola_msm8998
+          ref: Retrofit-A13-BoostKernel
+          path: kernel-source
+          
+      - name: Checkout Anykernel
+        uses: actions/checkout@v3
+        with:
+          submodules: true
+          repository: Aflaungos/AnyKernel3
+          ref: Evert
+          path: anykernel     
+          
+      - name: Setup Ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: Build-KernelSU-${{ matrix.device }}
+          save: ${{ github.event_name != 'pull_request' }}
+          max-size: 2G
+          
+      - name: Build Kernel
+        working-directory: kernel-source
+        run: |
+          CLANG="$GITHUB_WORKSPACE/aosp-clang/clang/clang-r487747/bin"
+          GCC32="$GITHUB_WORKSPACE/aosp-clang/arm-linux-androideabi-4.9/bin"
+          GCC64="$GITHUB_WORKSPACE/aosp-clang/aarch64-linux-android-4.9/bin"
+          PATH=$CLANG:$GCC64:$GCC32:$PATH
+          export PATH
+          export ARCH=arm64
+          export CLANG_TRIPLE=aarch64-linux-gnu
+          export CROSS_COMPILE=aarch64-linux-android-
+          export CROSS_COMPILE_ARM32=arm-linux-androideabi-
+          output_dir=out
+          date=$(date +"%Y%m%d%H%M")
+          export PATH="/usr/lib/ccache:$PATH"
+          echo "date=$date" >> $GITHUB_ENV
+          echo "Building kernel with $args"  
+          make O=out LLVM=1 LLVM_IAS=1 CC="ccache clang" lineageos_${{ matrix.device }}_defconfig && make O=out LLVM=1 LLVM_IAS=1 CC="ccache clang" -j$(grep -c ^processor /proc/cpuinfo)
+          
+      - name: Upload BoostKernel-${{ matrix.device }}
+        uses: actions/upload-artifact@v3
+        with:
+          name: BoostKernel-${{ matrix.device }}
+          path: kernel-source/out/arch/arm64/boot/*
+          
+      - name: Prepare Anykernel
+        working-directory: anykernel
+        run: |
+          cp -f $GITHUB_WORKSPACE/kernel-source/out/arch/arm64/boot/Image.gz-dtb .
+          ZIP_NAME="BoostKernel-KernelSU-${{ matrix.device }}"
+          echo "ZIP_NAME=$ZIP_NAME" >> $GITHUB_ENV
+          zip -r "$ZIP_NAME.zip" *
+          mv "$ZIP_NAME.zip" $GITHUB_WORKSPACE
+          
+      - name: Upload Anykernel
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ env.ZIP_NAME }}
+          path: anykernel/*
+          
+      - name: Creating Config Info
+        run: |
+          echo "Device: Moto G6 Plus (evert)
+          Only For Retrofit Roms (PixelExperience and Crdroid)
+          " >> INFO.txt
+      
+      - name: Release
+        if: success()
+        uses: softprops/action-gh-release@v1
+        with:
+          name: "KernelSU For ${{ matrix.device }}"
+          body_path: "INFO.txt"
+          files: |
+            kernel-source/out/arch/arm64/boot/*
+            ${{ env.ZIP_NAME }}.zip
+          tag_name: ${{ github.run_number }}-${{ github.ref }}-${{ matrix.device }}
+          
+      - name: Delete workflow runs
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          retain_days: 0
+          keep_minimum_runs: 2
