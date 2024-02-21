@@ -1,7 +1,6 @@
 name: Build Android Kernel 14 with KernelSU (Retrofit)
 on:
   workflow_call:
-  push:
   schedule:
     - cron: "0 12 * * *"
 jobs:
