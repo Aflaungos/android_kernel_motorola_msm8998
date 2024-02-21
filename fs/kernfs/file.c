@@ -294,7 +294,6 @@ static ssize_t kernfs_fop_write(struct file *file, const char __user *user_buf,
 				return -ENOMEM;
 		}
 	}
-}
 
 	/*
 	 * @of->mutex nests outside active ref and is used both to ensure that
