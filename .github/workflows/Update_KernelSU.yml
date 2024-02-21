@@ -15,7 +15,7 @@ jobs:
       - name: Setup kernel source
         uses: actions/checkout@v4
         with:
-	  fetch-depth: 0
+          fetch-depth: 0
           submodules: true
           repository: Aflaungos/android_kernel_motorola_msm8998
           ref: lineage-20-BoostKernel
