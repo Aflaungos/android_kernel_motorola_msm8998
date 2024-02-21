@@ -1,0 +1,56 @@
+name: Update KernelSU for Evert
+on:
+  workflow_call:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 12 * * *"
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+
+    steps:
+      - name: Setup kernel source
+        uses: actions/checkout@v3
+        with:
+          submodules: true
+          repository: Aflaungos/android_kernel_motorola_msm8998
+          ref: lineage-20-BoostKernel
+          path: kernel-source
+
+      - name: Compare versions
+        run: |
+          cd $GITHUB_WORKSPACE/kernel-source/
+          local_commit=$(git submodule status --recursive | awk '{print $1}')
+          latest_commit=$(curl -s https://github.com/tiann/KernelSU/commits/main | grep 'data-pjax="true"' | head -n 1 | awk -F'/' '{print $7}')
+
+          if [ "$local_commit" = "$latest_commit" ]; then
+            echo "NEED_UPDATE=false" >> $GITHUB_ENV
+          else
+            echo "NEED_UPDATE=true" >> $GITHUB_ENV
+          fi
+          
+      - name: Update KernelSU
+        if: env.NEED_UPDATE == 'true'
+        run: |
+          cd $GITHUB_WORKSPACE/kernel-source/KernelSU
+          git fetch origin main
+          git reset --hard origin/main
+
+      - name: Update current version
+        if: env.NEED_UPDATE == 'true'
+        run: |
+          cd $GITHUB_WORKSPACE/kernel-source/
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add .
+          git commit -m "New KernelSU Update! $latest_commit"
+          git push origin Retrofit-A13-BoostKernel
+
+      - name: Delete workflow runs
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          retain_days: 0
+          keep_minimum_runs: 2
