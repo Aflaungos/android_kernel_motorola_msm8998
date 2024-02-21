@@ -23,7 +23,7 @@ jobs:
       - name: Update KernelSU
         run: |
           cd $GITHUB_WORKSPACE/kernel-source/KernelSU
-          git fetch origin main
+          git pull origin main
           git reset --hard origin/main
 
       - name: Update current version
