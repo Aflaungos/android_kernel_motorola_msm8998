@@ -25,7 +25,7 @@ jobs:
           sudo apt clean
           
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         
       - name: Cache Build Tools
         id: cache-aosp-clang
@@ -42,16 +42,18 @@ jobs:
           git clone https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 -b android-13.0.0_r0.13 --depth=1 --single-branch --no-tags aosp-clang/arm-linux-androideabi-4.9
       
       - name: Setup kernel source
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
+	  fetch-depth: 0
           submodules: true
           repository: Aflaungos/android_kernel_motorola_msm8998
           ref: lineage-20-BoostKernel
           path: kernel-source
           
       - name: Checkout Anykernel
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
+	  fetch-depth: 0
           submodules: true
           repository: Aflaungos/AnyKernel3
           ref: Evert
