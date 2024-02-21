@@ -1,0 +1,42 @@
+name: Update KernelSU for Evert (Retrofit)
+on:
+  workflow_call:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 12 * * *"
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+
+    steps:
+      - name: Setup kernel source
+        uses: actions/checkout@v3
+        with:
+          submodules: true
+          repository: Aflaungos/android_kernel_motorola_msm8998
+          ref: Retrofit-A13-BoostKernel
+          path: kernel-source
+          
+      - name: Update KernelSU
+        run: |
+          cd $GITHUB_WORKSPACE/kernel-source/KernelSU
+          git fetch origin main
+          git reset --hard origin/main
+
+      - name: Update current version
+        run: |
+          cd $GITHUB_WORKSPACE/kernel-source/
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add .
+          git commit -m "New KernelSU Update! $latest_commit"
+          git push origin Retrofit-A13-BoostKernel
+
+      - name: Delete workflow runs
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          retain_days: 0
+          keep_minimum_runs: 2
