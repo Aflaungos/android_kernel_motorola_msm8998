@@ -1,4 +1,8 @@
-- name: Delete workflow runs
+name: Build Android Kernel 13 with KernelSU
+on:
+  workflow_dispatch:
+  
+      - name: Delete workflow runs
         uses: Mattraks/delete-workflow-runs@v2
         with:
           retain_days: 0
