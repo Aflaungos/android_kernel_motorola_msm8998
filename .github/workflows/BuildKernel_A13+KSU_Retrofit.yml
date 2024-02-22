@@ -1,4 +1,4 @@
-name: Build Android Kernel 13 with KernelSU (Retrofit)
+name: Build BoostKernel A13 with KernelSU (Retrofit)
 on:
   workflow_dispatch:
   schedule:
