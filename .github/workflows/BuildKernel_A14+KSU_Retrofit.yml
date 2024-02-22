@@ -1,4 +1,4 @@
-name: Build Android Kernel 14 with KernelSU (Retrofit)
+name: Build BoostKernel A14 with KernelSU (Retrofit)
 on:
   workflow_dispatch:
   schedule:
@@ -109,7 +109,7 @@ jobs:
           
       - name: Creating Config Info
         run: |
-          echo "Device: Moto G6 Plus (evert)
+          echo "
           Only For Retrofit Roms (PixelExperience and Crdroid)
           " >> INFO.txt
       
@@ -117,12 +117,11 @@ jobs:
         if: success()
         uses: softprops/action-gh-release@v1
         with:
-          name: "KernelSU For ${{ matrix.device }}"
+          name: "BoostKernel For ${{ matrix.device }}"
           body_path: "INFO.txt"
           files: |
             kernel-source/out/arch/arm64/boot/*
             ${{ env.ZIP_NAME }}.zip
-          tag_name: ${{ github.run_number }}-${{ github.ref }}-${{ matrix.device }}
           
       - name: Delete workflow runs
         uses: Mattraks/delete-workflow-runs@v2
