@@ -1,9 +1,6 @@
 name: Force Update KernelSU for Evert A14
 on:
-  workflow_call:
   workflow_dispatch:
-  schedule:
-    - cron: "0 12 * * *"
 
 jobs:
   update:
