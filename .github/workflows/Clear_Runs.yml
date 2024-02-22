@@ -1,6 +1,8 @@
 name: Build Android Kernel 13 with KernelSU
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "10 12 * * *"
 
 jobs:
   update:
