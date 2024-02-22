@@ -43,11 +43,14 @@ jobs:
       - name: Setup kernel source
         uses: actions/checkout@v4
         with:
-          submodules: true
           repository: Aflaungos/android_kernel_motorola_msm8998
           ref: lineage-21-BoostKernel
           path: kernel-source
-          
+
+      - name: Setup submodules
+        run: git submodule update --init --recursive --depth 0
+        working-directory: kernel-source
+
       - name: Checkout Anykernel
         uses: actions/checkout@v4
         with:
