@@ -453,7 +453,7 @@
 					qcom,gpu-freq = <647000000>;
 					qcom,bus-freq = <11>;
 					qcom,bus-min = <10>;
-					qcom,bus-max = <10>;
+					qcom,bus-max = <11>;
 				};
 
 				/* NOM */
