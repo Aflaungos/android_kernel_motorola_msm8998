@@ -107,20 +107,19 @@ jobs:
           
       - name: Creating Config Info
         run: |
-          echo "Device: Moto G6 Plus (evert)
-          Build Code: $(date +%Y%m%d)-${{ github.run_number }}
+          echo "
+          For Non-Retrofit Roms (LineageOS/ AICP/ ArrowOS)
           " >> INFO.txt
       
       - name: Release
         if: success()
         uses: softprops/action-gh-release@v1
         with:
-          name: "KernelSU For ${{ matrix.device }}"
+          name: "BoostKernel For ${{ matrix.device }}"
           body_path: "INFO.txt"
           files: |
             kernel-source/out/arch/arm64/boot/*
             ${{ env.ZIP_NAME }}.zip
-          tag_name: ${{ github.run_number }}-${{ github.ref }}-${{ matrix.device }}
           
       - name: Delete workflow runs
         uses: Mattraks/delete-workflow-runs@v2
