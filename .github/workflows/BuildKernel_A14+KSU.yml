@@ -1,4 +1,4 @@
-name: Build Android Kernel 14 with KernelSU
+name: Build BoostKernel A14 with KernelSU
 on:
   workflow_dispatch:
   schedule:
