@@ -1,6 +1,6 @@
 name: Build Android Kernel 14 with KernelSU
 on:
-  workflow_call:
+  workflow_dispatch:
   schedule:
     - cron: "0 12 * * *"
 jobs:
