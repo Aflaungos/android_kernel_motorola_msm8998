@@ -24,7 +24,7 @@ jobs:
           sudo apt clean
           
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         
       - name: Cache Build Tools
         id: cache-aosp-clang
@@ -43,11 +43,13 @@ jobs:
       - name: Setup kernel source
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
-          submodules: true
           repository: Aflaungos/android_kernel_motorola_msm8998
-          ref: Retrofit-A13-BoostKernel
+          ref: Retrofit-A14-BoostKernel
           path: kernel-source
+
+      - name: Setup submodules
+        run: git submodule update --init --recursive --depth 0
+        working-directory: kernel-source
           
       - name: Checkout Anykernel
         uses: actions/checkout@v4
