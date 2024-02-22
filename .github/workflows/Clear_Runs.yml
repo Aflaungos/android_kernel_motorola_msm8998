@@ -1,7 +1,14 @@
 name: Build Android Kernel 13 with KernelSU
 on:
   workflow_dispatch:
-  
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+
+    steps:
       - name: Delete workflow runs
         uses: Mattraks/delete-workflow-runs@v2
         with:
