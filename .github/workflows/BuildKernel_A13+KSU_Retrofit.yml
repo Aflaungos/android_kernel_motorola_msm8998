@@ -9,7 +9,7 @@ jobs:
       matrix:
         device: [evert]
         
-    name: Build KernelSU-${{ matrix.device }}
+    name: Build BoostKernel For ${{ matrix.device }}
     runs-on: ubuntu-latest
     env:
       CCACHE_COMPILERCHECK: "%compiler% -dumpmachine; %compiler% -dumpversion"
