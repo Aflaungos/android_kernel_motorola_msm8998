@@ -25,7 +25,10 @@ jobs:
           
       - name: Checkout
         uses: actions/checkout@v4
-        
+
+      - name: Cleanup
+        uses: rokibhasansagar/slimhub_actions@main
+
       - name: Cache Build Tools
         id: cache-aosp-clang
         uses: actions/cache@v4
