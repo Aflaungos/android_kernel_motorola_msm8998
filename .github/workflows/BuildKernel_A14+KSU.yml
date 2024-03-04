@@ -17,6 +17,10 @@ jobs:
       CCACHE_HARDLINK: "true"
     
     steps:
+
+      - name: Cleanup
+        uses: rokibhasansagar/slimhub_actions@main
+
       - name: Installing Dependencies
         run: |
           sudo apt update -y
