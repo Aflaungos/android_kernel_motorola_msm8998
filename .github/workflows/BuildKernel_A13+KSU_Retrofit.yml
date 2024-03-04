@@ -127,7 +127,18 @@ jobs:
             kernel-source/out/arch/arm64/boot/*
             ${{ env.ZIP_NAME }}.zip
           tag_name: ${{ github.run_number }}-${{ github.ref }}-${{ matrix.device }}
-          
+
+      - name: Start NotifierBot Evert
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.CHAT_ID_Evert }}
+          token: ${{ secrets.BOT_TOKEN }}
+          message: |
+            New KernelSU Update!
+            ${{ github.event.commits[0].message }}
+            
+            DOWNLOAD: https://github.com/${{ github.repository }}/tags/${{github.tag}}
+       
       - name: Delete workflow runs
         uses: Mattraks/delete-workflow-runs@v2
         with:
