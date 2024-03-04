@@ -43,6 +43,7 @@ jobs:
       - name: Setup kernel source
         uses: actions/checkout@v4
         with:
+          fetch-depth: 1
           repository: Aflaungos/android_kernel_motorola_msm8998
           ref: Retrofit-A13-BoostKernel
           path: kernel-source
@@ -54,6 +55,7 @@ jobs:
       - name: Checkout Anykernel
         uses: actions/checkout@v4
         with:
+          fetch-depth: 1
           submodules: true
           repository: Aflaungos/AnyKernel3
           ref: Evert
