@@ -125,6 +125,7 @@ jobs:
           files: |
             kernel-source/out/arch/arm64/boot/*
             ${{ env.ZIP_NAME }}.zip
+          tag_name: ${{ github.run_number }}-${{ github.ref }}-${{ matrix.device }}
 
       - name: Start NotifierBot Evert
         uses: appleboy/telegram-action@master
