@@ -128,17 +128,13 @@ jobs:
             ${{ env.ZIP_NAME }}.zip
           tag_name: ${{ github.run_number }}-${{ github.ref }}-${{ matrix.device }}
 
-      - name: Go to correct folder
-        run: |
-          cd ..
-
       - name: Start NotifierBot Evert
         uses: appleboy/telegram-action@master
         with:
           to: ${{ secrets.CHAT_ID_Evert }}
           token: ${{ secrets.BOT_TOKEN }}
-          message: |
-             New KernelSU Update! $(git -C path/to/submodule rev-parse --short HEAD)
+  #        message: |
+  #          New KernelSU Update! $(git -C path/to/submodule rev-parse --short HEAD)
             
   #          DOWNLOAD: https://github.com/${{ github.repository }}/releases/latest
             
