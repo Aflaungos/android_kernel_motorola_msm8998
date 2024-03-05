@@ -134,8 +134,7 @@ jobs:
           to: ${{ secrets.CHAT_ID_Evert }}
           token: ${{ secrets.BOT_TOKEN }}
           message: |
-            DOWNLOAD: https://github.com/${{ github.repository }}/releases/latest
-  #         New KernelSU Update! $(git -C path/to/submodule rev-parse --short HEAD)
+             New KernelSU Update! $(git -C path/to/submodule rev-parse --short HEAD)
             
   #          DOWNLOAD: https://github.com/${{ github.repository }}/releases/latest
             
