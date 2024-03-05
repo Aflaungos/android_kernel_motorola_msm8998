@@ -121,7 +121,7 @@ jobs:
         if: success()
         uses: softprops/action-gh-release@v1
         with:
-          name: "BoostKernel For ${{ matrix.device }}"
+          name: "BoostKernel For ${{ matrix.device }} Retrofit"
           body_path: "INFO.txt"
           files: |
             kernel-source/out/arch/arm64/boot/*
@@ -134,11 +134,16 @@ jobs:
           to: ${{ secrets.CHAT_ID_Evert }}
           token: ${{ secrets.BOT_TOKEN }}
           message: |
-            New KernelSU Update!
-            ${{ github.event.commits[0].message }}
+            New KernelSU Update! $(git -C path/to/submodule rev-parse --short HEAD)
             
-            DOWNLOAD: https://github.com/${{ github.repository }}/tags/${{github.tag}}
-       
+            DOWNLOAD: https://github.com/${{ github.repository }}/releases/latest
+            
+  #         {%- if contains(github.event.commits[0].message, 'Retrofit') %}
+  #         DOWNLOAD (Retrofit Release): ${{ steps.get_release.outputs.download_url }}
+  #         {%- else %}
+  #         DOWNLOAD (Non-Retrofit Release): ${{ steps.get_release.outputs.download_url }}
+  #         {%- endif %}
+  
       - name: Delete workflow runs
         uses: Mattraks/delete-workflow-runs@v2
         with:
