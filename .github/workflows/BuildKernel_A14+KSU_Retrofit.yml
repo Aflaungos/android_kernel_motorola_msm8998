@@ -126,6 +126,22 @@ jobs:
           files: |
             kernel-source/out/arch/arm64/boot/*
             ${{ env.ZIP_NAME }}.zip
+
+      - name: Start NotifierBot Evert
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.CHAT_ID_Evert }}
+          token: ${{ secrets.BOT_TOKEN }}
+          message: |
+            New KernelSU Update! $(git -C path/to/submodule rev-parse --short HEAD)
+            
+            DOWNLOAD: https://github.com/${{ github.repository }}/releases/latest
+            
+  #         {%- if contains(github.event.commits[0].message, 'Retrofit') %}
+  #         DOWNLOAD (Retrofit Release): ${{ steps.get_release.outputs.download_url }}
+  #         {%- else %}
+  #         DOWNLOAD (Non-Retrofit Release): ${{ steps.get_release.outputs.download_url }}
+  #         {%- endif %}
           
       - name: Delete workflow runs
         uses: Mattraks/delete-workflow-runs@v2
