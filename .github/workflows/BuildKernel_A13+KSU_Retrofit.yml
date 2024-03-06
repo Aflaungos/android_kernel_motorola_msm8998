@@ -26,6 +26,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: Retrofit-A13-BoostKernel
+          path: '.'
 
       - name: Cache Build Tools
         id: cache-aosp-clang
