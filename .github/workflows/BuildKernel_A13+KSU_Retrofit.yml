@@ -30,7 +30,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
-          repository: Aflaungos/android_kernel_motorola_msm8998
           ref: Retrofit-A13-BoostKernel
 
       - name: Cache Build Tools
