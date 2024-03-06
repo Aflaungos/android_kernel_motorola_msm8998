@@ -1,4 +1,13 @@
-- name: Check dir
+name: Check dir
+on:
+  workflow_dispatch:
+  
+jobs:
+  update:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check dir
         working-directory: anykernel
         run: |
           ls -a
