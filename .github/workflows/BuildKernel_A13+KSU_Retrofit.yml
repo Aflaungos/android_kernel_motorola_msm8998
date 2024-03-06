@@ -64,6 +64,12 @@ jobs:
           key: Build-KernelSU-${{ matrix.device }}
           save: ${{ github.event_name != 'pull_request' }}
           max-size: 2G
+
+      - name: Move files from subfolder to parent folder
+        run: |
+          mv /home/runner/work/android_kernel_motorola_msm8998/android_kernel_motorola_msm8998/* /home/runner/work/android_kernel_motorola_msm8998/
+          rm -rf /home/runner/work/android_kernel_motorola_msm8998/android_kernel_motorola_msm8998/*
+          
           
       - name: Build Kernel
         run: |
