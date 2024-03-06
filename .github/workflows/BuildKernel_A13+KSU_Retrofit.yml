@@ -23,10 +23,7 @@ jobs:
           sudo apt clean
           
       - name: Setup kernel source
-        uses: actions/checkout@v4
-        with:
-          ref: Retrofit-A13-BoostKernel
-          path: '.'
+        run: git checkout Retrofit-A13-BoostKernel
 
       - name: Cache Build Tools
         id: cache-aosp-clang
