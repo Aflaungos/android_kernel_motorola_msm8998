@@ -26,8 +26,12 @@ jobs:
           sudo apt-get install -y lld binutils clang llvm zip flex bison libncurses-dev gawk  libiberty-dev autoconf kmod bc build-essential gcc libc6 curl libstdc++6 git wget libssl-dev cpio p7zip-full ccache
           sudo apt clean
           
-      - name: Checkout
+      - name: Setup kernel source
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          repository: Aflaungos/android_kernel_motorola_msm8998
+          ref: Retrofit-A13-BoostKernel
 
       - name: Cache Build Tools
         id: cache-aosp-clang
@@ -42,18 +46,9 @@ jobs:
           git clone https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 --depth=1 --single-branch --no-tags -b master aosp-clang/clang
           git clone https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 -b android-13.0.0_r0.13 --depth=1 --single-branch --no-tags aosp-clang/aarch64-linux-android-4.9
           git clone https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 -b android-13.0.0_r0.13 --depth=1 --single-branch --no-tags aosp-clang/arm-linux-androideabi-4.9
-      
-      - name: Setup kernel source
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-          repository: Aflaungos/android_kernel_motorola_msm8998
-          ref: Retrofit-A13-BoostKernel
-          path: kernel-source
 
       - name: Setup submodules
         run: git submodule update --init --recursive --depth 0
-        working-directory: kernel-source
           
       - name: Checkout Anykernel
         uses: actions/checkout@v4
@@ -72,7 +67,6 @@ jobs:
           max-size: 2G
           
       - name: Build Kernel
-        working-directory: kernel-source
         run: |
           CLANG="$GITHUB_WORKSPACE/aosp-clang/clang/clang-r487747/bin"
           GCC32="$GITHUB_WORKSPACE/aosp-clang/arm-linux-androideabi-4.9/bin"
@@ -94,12 +88,12 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: BoostKernel-${{ matrix.device }}
-          path: kernel-source/out/arch/arm64/boot/*
+          path: out/arch/arm64/boot/*
           
       - name: Prepare Anykernel
         working-directory: anykernel
         run: |
-          cp -f $GITHUB_WORKSPACE/kernel-source/out/arch/arm64/boot/Image.gz-dtb .
+          cp -f $GITHUB_WORKSPACE/out/arch/arm64/boot/Image.gz-dtb .
           ZIP_NAME="BoostKernel-KernelSU-${{ matrix.device }}"
           echo "ZIP_NAME=$ZIP_NAME" >> $GITHUB_ENV
           zip -r "$ZIP_NAME.zip" *
@@ -124,7 +118,7 @@ jobs:
           name: "BoostKernel For ${{ matrix.device }} Retrofit"
           body_path: "INFO.txt"
           files: |
-            kernel-source/out/arch/arm64/boot/*
+            out/arch/arm64/boot/*
             ${{ env.ZIP_NAME }}.zip
           tag_name: ${{ github.run_number }}-${{ github.ref }}-${{ matrix.device }}
 
