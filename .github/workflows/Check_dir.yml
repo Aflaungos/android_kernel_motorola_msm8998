@@ -1,0 +1,4 @@
+- name: Check dir
+        working-directory: anykernel
+        run: |
+          ls -a
