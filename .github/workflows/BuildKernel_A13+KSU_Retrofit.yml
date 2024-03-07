@@ -1,8 +1,8 @@
 name: Build BoostKernel A13 with KernelSU (Retrofit)
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "10 12 * * *"
+#  schedule:
+#    - cron: "10 12 * * *"
 jobs:
   build:
     strategy:
@@ -23,7 +23,7 @@ jobs:
           sudo apt clean
           
       - name: Setup kernel source
-        run: git checkout Retrofit-A13-BoostKernel
+        run: git clone https://github.com/Aflaungos/android_kernel_motorola_msm8998 . -b Retrofit-A13-BoostKernel --depth=1 --no-tags
 
       - name: Cache Build Tools
         id: cache-aosp-clang
