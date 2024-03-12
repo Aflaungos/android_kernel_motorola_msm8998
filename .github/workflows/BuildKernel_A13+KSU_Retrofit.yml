@@ -1,8 +1,8 @@
 name: Build BoostKernel A13 with KernelSU (Retrofit)
 on:
   workflow_dispatch:
-#  schedule:
-#    - cron: "10 12 * * *"
+  schedule:
+    - cron: "10 12 * * *"
 jobs:
   build:
     strategy:
